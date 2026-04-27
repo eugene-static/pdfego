@@ -2,10 +2,12 @@ module dev_excelize
 
 go 1.25
 
-require github.com/xuri/excelize/v2 v2.10.0
+require (
+	codeberg.org/go-pdf/fpdf v0.11.1
+	github.com/xuri/excelize/v2 v2.10.0
+)
 
 require (
-	codeberg.org/go-pdf/fpdf v0.11.1 // indirect
 	github.com/SebastiaanKlippert/go-wkhtmltopdf v1.9.3 // indirect
 	github.com/gpdf-dev/gpdf v1.0.6 // indirect
 	github.com/richardlehane/mscfb v1.0.4 // indirect
