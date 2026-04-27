@@ -7,30 +7,33 @@ type Template struct {
 	width   float64
 	height  float64
 	margins float64
-	grids   []*Grid
+	frames  []*Frame
 }
 
-func (t *Template) Grids(grids ...*Grid) {
-	t.grids = grids
+func (t *Template) Frames(frames ...*Frame) {
+	t.frames = frames
 }
 
 func (t *Template) Draw() {
-	for i := range t.grids {
-		t.grids[i].Draw(t.core)
+	cells := make([]*TableCell, 0)
+
+	for i := range t.frames {
+		cells = append(cells, t.frames[i].cells()...)
+		//t.frames[i].Draw(t.core)
 	}
 }
 
-func (t *Template) Parent() GridParent {
+func (t *Template) isParent() frameParent {
 	return t
 }
 
 type Drawer interface {
-	Draw(core *fpdf.Fpdf)
+	cells() []*TableCell
 	width() float64
 	height() float64
-	SetParentCell(parent *Field)
+	setParentCell(parent *Field)
 }
 
-type GridParent interface {
-	Parent() GridParent
+type frameParent interface {
+	isParent() frameParent
 }

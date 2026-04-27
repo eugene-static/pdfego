@@ -1,28 +1,44 @@
 package constructor
 
 import (
+	"slices"
 	"strings"
 
 	"codeberg.org/go-pdf/fpdf"
 )
 
 type Table struct {
-	gridCell *Field
-	cols     []float64
-	rows     []*Row
+	field *Field
+	cols  []float64
+	rows  []*Row
 }
 
-func NewTable(cols []float64, rows ...*Row) *Table {
+func NewTable(cols ...float64) *Table {
 	t := &Table{
 		cols: cols,
-		rows: rows,
 	}
 
 	return t
 }
 
-func (t *Table) SetParentCell(parent *Field) {
-	t.gridCell = parent
+func (t *Table) Rows(rows ...*Row) *Table {
+	for i := range rows {
+		rows[i].table = t
+	}
+
+	t.rows = rows
+
+	return t
+}
+
+//func (t *Table) Draw(core *fpdf.Fpdf) {
+//	for i := range t.rows {
+//		t.rows[i].Draw(core)
+//	}
+//}
+
+func (t *Table) setParentCell(parent *Field) {
+	t.field = parent
 }
 
 func (t *Table) width() (w float64) {
@@ -35,18 +51,18 @@ func (t *Table) width() (w float64) {
 
 func (t *Table) height() (h float64) {
 	for _, row := range t.rows {
-		h += row.h
+		h += row.height
 	}
 
 	return h
 }
 
-func (t *Table) Draw(core *fpdf.Fpdf) {
+func (t *Table) cells() (cells []*TableCell) {
 	for i := range t.rows {
-		t.rows[i].table = t
-
-		t.rows[i].Draw(core)
+		slices.Concat(cells, t.rows[i].cells)
 	}
+
+	return cells
 }
 
 func (t *Table) cellWidth(index, colspan int) (w float64) {
@@ -63,44 +79,66 @@ func (t *Table) cellWidth(index, colspan int) (w float64) {
 }
 
 type Row struct {
-	table *Table
-	h     float64
-	cells []*Cell
+	table      *Table
+	lineHeight float64
+	height     float64
+	cells      []*TableCell
 }
 
-func NewRow(cells ...*Cell) *Row {
-	return &Row{
-		cells: cells,
-	}
+func NewRow() *Row {
+	r := &Row{}
+	return r
 }
 
-func (r *Row) Draw(core *fpdf.Fpdf) {
-	x, y := core.GetXY()
+func (r *Row) Cells(cells ...*TableCell) *Row {
+	for i := range cells {
+		maxHeight := max(cells[i].opts.Height, r.height)
 
-	for i, cell := range r.cells {
-		if cell.opts.Height > r.h {
-			r.h = cell.opts.Height
-		}
+		cells[i].opts.Height, r.height = maxHeight, maxHeight
 
-		cell.w = r.table.cellWidth(i, cell.opts.Colspan)
-
-		cell.row = r
-
-		cell.Draw(core)
+		cells[i].row = r
 	}
 
-	core.SetXY(x, y+r.h)
+	r.cells = cells
+
+	return r
 }
 
-type Cell struct {
+//func (r *Row) Draw(core *fpdf.Fpdf) {
+//	x, y := core.GetXY()
+//	_, fontSize := core.GetFontSize()
+//
+//	r.lineHeight = lineHeight(fontSize)
+//
+//	for i := range r.cells {
+//		r.cells[i].w = r.table.cellWidth(i, r.cells[i].opts.Colspan)
+//
+//		if r.cells[i].opts.Wrap {
+//			wrappedHeight := float64(len(core.SplitText(r.cells[i].text, r.cells[i].w))) * r.lineHeight
+//
+//			if wrappedHeight > r.height {
+//				r.height = wrappedHeight
+//			}
+//		}
+//
+//		r.cells[i].Draw(core)
+//	}
+//
+//	core.SetXY(x, y+r.height)
+//}
+
+type TableCell struct {
 	row  *Row
+	x    float64
+	y    float64
 	w    float64
+	h    float64
 	text string
 	opts CellOpts
 }
 
-func NewCell(text string, opts ...CellOpts) *Cell {
-	tc := &Cell{
+func Cell(text string, opts ...CellOpts) *TableCell {
+	tc := &TableCell{
 		text: text,
 		opts: defaultCellOpts(),
 	}
@@ -142,15 +180,23 @@ func NewCell(text string, opts ...CellOpts) *Cell {
 	return tc
 }
 
-func NewFormCell(text string, opts ...CellOpts) *Cell {
+func Form(text string, opts ...CellOpts) *TableCell {
 	if opts != nil {
 		opts[0].Border = "B"
 	}
 
-	return NewCell(text, opts...)
+	return Cell(text, opts...)
 }
 
-func (c *Cell) Draw(core *fpdf.Fpdf) {
+func Text(text string, opts ...CellOpts) *TableCell {
+	if opts != nil {
+		opts[0].Border = ""
+	}
+
+	return Cell(text, opts...)
+}
+
+func (c *TableCell) Draw(core *fpdf.Fpdf) {
 	if c.opts.FontSize > 0 {
 		fontSize, _ := core.GetFontSize()
 
@@ -172,18 +218,8 @@ func (c *Cell) Draw(core *fpdf.Fpdf) {
 		c.opts.Border = strings.ReplaceAll(c.opts.Border, "+", "")
 	}
 
-	_, fontSize := core.GetFontSize()
-	lineHeight := c.lineHeight(fontSize)
-
-	if c.opts.Height == 0 {
-		c.opts.Height = c.row.h
-
-		if c.row.h == 0 {
-			c.opts.Height = lineHeight
-		}
-	}
-
 	x, y := core.GetXY()
+	c.x, c.y = x, y
 
 	if c.w == 0 {
 		wPage, _ := core.GetPageSize()
@@ -199,14 +235,14 @@ func (c *Cell) Draw(core *fpdf.Fpdf) {
 
 		splitText := core.SplitText(c.text, c.w)
 
-		vOffset := c.yOffset(len(splitText), lineHeight)
+		vOffset := c.yOffset(len(splitText), c.row.lineHeight)
 
 		core.SetXY(x, y+vOffset)
 
 		for _, line := range splitText {
 			x, y = core.GetXY()
-			core.CellFormat(c.w, lineHeight, line, "", 0, c.opts.Align, false, 0, "")
-			core.SetXY(x, y+lineHeight)
+			core.CellFormat(c.w, c.row.lineHeight, line, "", 0, c.opts.Align, false, 0, "")
+			core.SetXY(x, y+c.row.lineHeight)
 		}
 
 		core.SetXY(x+c.w, y)
@@ -217,7 +253,7 @@ func (c *Cell) Draw(core *fpdf.Fpdf) {
 	core.CellFormat(c.w, c.opts.Height, c.text, c.opts.Border, 0, c.opts.Align, false, 0, "")
 }
 
-func (c *Cell) yOffset(linesNum int, lineHeight float64) float64 {
+func (c *TableCell) yOffset(linesNum int, lineHeight float64) float64 {
 	vOffset := 0.0
 
 	if strings.ContainsRune(c.opts.Align, 'M') {
@@ -231,19 +267,20 @@ func (c *Cell) yOffset(linesNum int, lineHeight float64) float64 {
 	return vOffset
 }
 
-func (c *Cell) lineHeight(fontSize float64) float64 {
+func lineHeight(fontSize float64) float64 {
 	return fontSize * 1.2
 }
 
 type CellOpts struct {
-	Height   float64
-	Align    string
-	Border   string
-	Colspan  int
-	Rowspan  int
-	Style    string
-	FontSize float64
-	Wrap     bool
+	Height      float64
+	Colspan     int
+	Rowspan     int
+	Align       string
+	Border      string
+	BorderWidth float64
+	Style       string
+	FontSize    float64
+	Wrap        bool
 }
 
 func defaultCellOpts() CellOpts {
