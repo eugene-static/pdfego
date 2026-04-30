@@ -1,18 +1,87 @@
 package template
 
-import "codeberg.org/go-pdf/fpdf"
-
 type Template struct {
-	core *fpdf.Fpdf
+	core   *Core
+	frames []Frame
+}
+
+func (t *Template) Frame() *Frame {
+	frame := Frame{}
+
+	t.frames = append(t.frames, frame)
+
+	return &frame
+}
+
+type Drawer interface {
+	Draw()
+}
+
+type Frame struct {
+	core   *Core
+	fields []Field
+}
+
+func (f *Frame) Field() *Field {
+	field := Field{
+		core: f.core,
+	}
+
+	f.fields = append(f.fields, field)
+
+	return &field
+}
+
+func (f *Frame) Draw() {
+	for _, field := range f.fields {
+		for _, drawer := range field.drawers {
+			drawer.Draw()
+		}
+	}
+}
+
+type Field struct {
+	core    *Core
+	drawers []Drawer
+}
+
+func (f *Field) Frame() *Frame {
+	frame := Frame{
+		core: f.core,
+	}
+
+	f.drawers = append(f.drawers, &frame)
+
+	return &frame
+}
+
+func (f *Field) Table(cols ...float64) *Table {
+	table := Table{
+		core: f.core,
+		cols: cols,
+	}
+
+	f.drawers = append(f.drawers, &table)
+
+	return &table
 }
 
 type Table struct {
+	core *Core
 	cols []float64
 	rows []Row
 }
 
+func (t *Table) Row() Row {
+	return Row{
+		core:   t.core,
+		cols:   t.cols,
+		height: t.core.fontHeight,
+	}
+}
+
 func (t *Table) Draw() {
-	//cells := make([]Cell, 0, len(t.cols)*len(t.rows))
+	//cells := make([]cell, 0, len(t.cols)*len(t.rows))
 
 	for _, row := range t.rows {
 		if len(row.cells) > len(t.cols) {
@@ -21,61 +90,9 @@ func (t *Table) Draw() {
 		}
 
 		for i := range row.cells {
-			row.cells[i].width = t.cols[i]
+			row.cells[i].height = row.height
 
-			if row.cells[i].height < row.cells[i].opts.Height {
-				row.cells[i].height = row.cells[i].opts.Height
-			}
-
-			if row.cells[i].opts.Wrap {
-				//splitText := _
-			}
+			row.cells[i].draw()
 		}
-	}
-}
-
-type Row struct {
-	height float64
-	cells  []Cell
-}
-
-func (r *Row) Cell(text string, opts CellOpts) {
-	cell := Cell{
-		text: text,
-		opts: opts,
-	}
-
-	r.cells = append(r.cells, cell)
-}
-
-type Cell struct {
-	height float64
-	width  float64
-	text   string
-	opts   CellOpts
-}
-
-type CellOpts struct {
-	Height      float64
-	Colspan     int
-	Rowspan     int
-	Align       string
-	Border      string
-	BorderWidth float64
-	Style       string
-	FontSize    float64
-	Wrap        bool
-}
-
-func defaultCellOpts() CellOpts {
-	return CellOpts{
-		//Height:  tc.lineHeight() ,
-		Align:    "CM",
-		Border:   "",
-		Colspan:  1,
-		Rowspan:  1,
-		Style:    "",
-		FontSize: 0,
-		Wrap:     false,
 	}
 }

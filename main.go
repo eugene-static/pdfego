@@ -29,7 +29,7 @@ func main() {
 		},
 	}
 
-	details = slices.Repeat(details, 14)
+	details = slices.Repeat(details, 50000)
 
 	upd := HTML{
 		Status:                       "1",
