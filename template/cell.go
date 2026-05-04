@@ -10,18 +10,21 @@ type cell struct {
 	y          float64
 	width      float64
 	height     float64
+	colspan    int
+	rowspan    int
 	font       string
 	fontSize   float64
 	border     string
 	borderSize float64
 	align      string
 	text       []string
+	busy       bool
 }
 
 type CellOpts struct {
-	Height  float64
-	Colspan int
-	//Rowspan    int
+	Height     float64
+	Colspan    int
+	Rowspan    int
 	Align      string
 	Border     string
 	BorderSize float64
@@ -31,7 +34,7 @@ type CellOpts struct {
 }
 
 // BT /[FontAlias] [FontSize] Tf [X] [Y] Td <[TextHex]> Tj ET
-func (c *cell) draw() {
+func (c *cell) render() {
 	//if f.y+h > f.pageBreakTrigger && !f.inHeader && !f.inFooter && f.acceptPageBreak() {
 	//	// Automatic page break
 	//	x := f.x
@@ -45,6 +48,10 @@ func (c *cell) draw() {
 	//	if f.err != nil {
 	//		return
 	//	}
+
+	if len(c.text) == 0 {
+		return
+	}
 
 	dy := c.textDy()
 

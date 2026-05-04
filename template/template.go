@@ -59,6 +59,7 @@ func (f *Field) Table(cols ...float64) *Table {
 	table := Table{
 		core: f.core,
 		cols: cols,
+		//rowspans: make([]int, len(cols)),
 	}
 
 	f.drawers = append(f.drawers, &table)
@@ -67,32 +68,66 @@ func (f *Field) Table(cols ...float64) *Table {
 }
 
 type Table struct {
-	core *Core
-	cols []float64
-	rows []Row
+	core     *Core
+	x        float64
+	y        float64
+	cols     []float64
+	rowIndex int
+	rows     []Row
+	//rowspans []int
 }
 
 func (t *Table) Row() Row {
-	return Row{
-		core:   t.core,
-		cols:   t.cols,
-		height: t.core.fontHeight,
+	r := Row{
+		core:     t.core,
+		x:        t.x,
+		cols:     t.cols,
+		height:   t.core.fontHeight,
+		cells:    make([]cell, len(t.cols)),
+		rowspans: make([]int, len(t.cols)),
 	}
+
+	if t.rowIndex > 0 {
+		r.rowspans = t.rows[t.rowIndex-1].decrementRowspans()
+	}
+
+	t.rowIndex++
+
+	return r
 }
 
 func (t *Table) Draw() {
-	//cells := make([]cell, 0, len(t.cols)*len(t.rows))
+	height := 0.0
+	x := t.x
 
 	for _, row := range t.rows {
-		if len(row.cells) > len(t.cols) {
-			//TODO: write warn
-			break
-		}
+		row.y = t.y + height
 
-		for i := range row.cells {
-			row.cells[i].height = row.height
+		for _, c := range row.cells {
+			c.x = x
+			x += c.width
 
-			row.cells[i].draw()
+			if !c.busy {
+				continue
+			}
+
+			c.height = t.cellHeight(c.rowspan)
+			height += row.height
+
+			c.render()
 		}
 	}
 }
+
+func (t *Table) cellHeight(rowspan int) (h float64) {
+	for i := t.rowIndex; i < len(t.rows) || i < t.rowIndex+rowspan; i++ {
+		h += t.rows[i].height
+	}
+
+	return h
+}
+
+// [3, 1, 1, 2, 1]
+// [2, 0, 0, 1, 0] -> [2, 1, 1, 1, 2]
+// [1, 0, 0, 0, 1] -> [1, 1, 1, 1, 1]
+// [0...........0] -> [1...........1]
