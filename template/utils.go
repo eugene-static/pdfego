@@ -23,6 +23,20 @@ func appendInt(b *bytes.Buffer, val int64) {
 	b.Write(buf)
 }
 
+func appendInt10(b *bytes.Buffer, val int64) {
+	// Преобразуем в десятичное представление
+	var tmp [12]byte // достаточно для int под 32/64
+	buf := strconv.AppendInt(tmp[:0], val, 10)
+	// Дописываем нули впереди до длины 10
+	zeros := 10 - len(buf)
+	for zeros > 0 {
+		b.WriteByte('0')
+		zeros--
+	}
+
+	b.Write(buf)
+}
+
 func appendHex4(b *bytes.Buffer, val uint16) {
 	buf := b.AvailableBuffer()
 	buf = append(buf,

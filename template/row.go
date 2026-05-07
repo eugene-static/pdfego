@@ -3,53 +3,43 @@ package template
 import "strings"
 
 type Row struct {
-	core      *Core
-	x         float64
-	y         float64
-	height    float64
-	cols      []float64
-	cellIndex int
-	cells     []cell
-	rowspans  []int
+	core        *Core
+	x           float64
+	y           float64
+	height      float64
+	cells       []cell
+	rowspans    []int
+	columns     []float64
+	columnIndex int
+	columnsLen  int
 }
 
 func (r *Row) Cell(text string, opts ...CellOpts) {
-	for i := r.cellIndex; i < len(r.rowspans); i++ {
-		if r.rowspans[i] > 0 {
-			r.cellIndex++
-		}
-	}
-
-	if r.cellIndex >= len(r.cols) {
-		//TODO: сообщить или нет
-		return
-	}
-
 	var opt CellOpts
 
 	if opts != nil {
 		opt = opts[0]
 	}
 
-	c := r.cell(text, opt)
+	r.setColIndex()
 
-	r.cells[r.cellIndex] = c
+	c := r.newCell(text, opt)
 
-	r.rowspans[r.cellIndex] += c.rowspan
+	r.cells[r.columnIndex] = c
 
-	for i := r.cellIndex; i < r.cellIndex+c.colspan; i++ {
-		r.rowspans[i] += c.colspan
-	}
-	//r.cellIndex += c.colspan
+	r.updateRowSpans(c.rowspan)
+
+	r.updateColIndex(c.colspan)
 }
 
-func (r *Row) cell(text string, opts CellOpts) cell {
+func (r *Row) newCell(text string, opts CellOpts) cell {
 	c := cell{
 		core:       r.core,
+		text:       []string{text},
 		font:       FontRegular,
 		fontSize:   r.core.fontSize,
 		border:     "",
-		borderSize: r.core.border.thin,
+		borderSize: 0,
 		align:      "CM",
 		colspan:    1,
 		rowspan:    1,
@@ -60,10 +50,6 @@ func (r *Row) cell(text string, opts CellOpts) cell {
 	//	c.width = c.core.page.width - c.core.page.margin - c.x
 	//}
 
-	if r.height < opts.Height {
-		r.height = opts.Height
-	}
-
 	if opts.Font != "" {
 		c.font = strings.ToUpper(opts.Font)
 	}
@@ -73,7 +59,7 @@ func (r *Row) cell(text string, opts CellOpts) cell {
 	}
 
 	if opts.Border != "" {
-		c.border = strings.ToUpper(opts.Border)
+		c.border = opts.Border
 	}
 
 	if opts.BorderSize > 0 {
@@ -90,36 +76,59 @@ func (r *Row) cell(text string, opts CellOpts) cell {
 
 	c.width = r.cellWidth(c.colspan)
 
-	cellText := []string{text}
+	var height float64
 
 	if opts.Wrap {
-		split := c.core.splitText(c.font, text, c.fontSize, c.width)
-		height := c.core.fontHeight * float64(len(split))
+		split := c.core.splitText(text, c.font, c.fontSize, c.width)
+		height = c.core.fontHeight * float64(len(split))
 
-		if r.height < height {
-			r.height = height
-		}
-
-		cellText = split
+		c.text = split
 	}
 
-	// Поле cell.height должно быть равно высоте строки, но пока все ячейки не будут созданы, мы не знаем итоговую высоту строки.
-	// Поэтому высота ячейки будет определяться в методе render().
-
-	c.text = cellText
+	r.setHeight(opts.Height, height)
 
 	return c
 }
 
+// Поле cell.height должно быть равно высоте строки, но пока все ячейки не будут созданы, мы не знаем итоговую высоту строки.
+// Поэтому высота ячейки будет определяться в методе render().
+func (r *Row) setHeight(heights ...float64) {
+	r.height = max(r.height, heights...)
+}
+
+// Ширина ячейки равна сумме ширин всех колонок, которые она занимает.
 func (r *Row) cellWidth(colspan int) (w float64) {
-	for i := r.cellIndex; i < len(r.cols) || i < r.cellIndex+colspan; i++ {
-		w += r.cols[i]
+	for i := r.columnIndex; i < min(r.columnsLen, r.columnIndex+colspan); i++ {
+		w += r.columns[i]
 	}
 
 	return w
 }
 
-func (r *Row) decrementRowspans() []int {
+// Если ячейки предыдущей строки имели rowspan, то мы ищем первую ячейку, которая rowspan не имела, и сдвигаем курсор на неё.
+func (r *Row) setColIndex() {
+	for r.columnIndex < r.columnsLen || r.rowspans[r.columnIndex] > 0 {
+		r.columnIndex++
+	}
+}
+
+// Каждая ячейка имеет свой colspan > 0. Если colspan > 1, то пропущенным ячейкам тоже необходимо присвоить rowspan этой ячейки.
+// Сдвигаем курсор к следующей ячейке.
+func (r *Row) updateColIndex(colspan int) {
+	for i := r.columnIndex; i < min(r.columnIndex+colspan, r.columnsLen); i++ {
+		r.rowspans[i] += colspan
+		r.columnIndex++
+	}
+}
+
+// Изначально массив rowspan содержит только 0. При создании ячейки она имеет по-умолчанию rowspan = 1, так как занимает одну строку.
+// Записываем в массив rowspan.
+func (r *Row) updateRowSpans(rowspan int) {
+	r.rowspans[r.columnIndex] += rowspan
+}
+
+// При создании новой строки уменьшаем все rowspan на 1.
+func (r *Row) decrementRowSpans() []int {
 	for i := range r.rowspans {
 		r.rowspans[i]--
 	}

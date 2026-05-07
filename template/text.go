@@ -4,19 +4,17 @@ import (
 	"strings"
 )
 
-func (core *Core) splitText(font, text string, size, width float64) []string {
-	segments := strings.Split(text, "\n")
+func (core *Core) splitText(text, font string, size, width float64) []string {
+	lines := make([]string, 0)
 
-	lines := make([]string, 0, len(segments))
-
-	for _, seg := range segments {
-		lines = append(lines, core.splitSegment(font, seg, size, width)...)
+	for seg := range strings.Lines(text) {
+		lines = append(lines, core.splitSegment(seg, font, size, width)...)
 	}
 
 	return lines
 }
 
-func (core *Core) splitSegment(font, text string, size, width float64) []string {
+func (core *Core) splitSegment(text, font string, size, width float64) []string {
 	words := strings.Fields(text)
 
 	lines := make([]string, 0, len(words))

@@ -19,18 +19,14 @@ func TestTemplate(t *testing.T) {
 	core.AddPage()
 
 	tmpl := Template{
-		core: core,
+		//core: core,
 	}
 
 	_ = tmpl
-
-	frame := tmpl.Frame()
-
-	tmpl.Draw()
 }
 
 func (t *Template) TitleHeader(field *Field) {
-	table := field.Table(t.fonts[""], 15, 5)
+	table := field.Table(15, 5)
 
 	r1 := table.Row()
 	r1.Cell("Универсальный\nпередаточный\nдокумент", CellOpts{Height: 20, Wrap: true, Colspan: 2, Align: "LT"})

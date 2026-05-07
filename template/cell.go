@@ -2,6 +2,7 @@ package template
 
 import (
 	"strings"
+	"unicode"
 )
 
 type cell struct {
@@ -34,104 +35,71 @@ type CellOpts struct {
 }
 
 // BT /[FontAlias] [FontSize] Tf [X] [Y] Td <[TextHex]> Tj ET
-func (c *cell) render() {
-	//if f.y+h > f.pageBreakTrigger && !f.inHeader && !f.inFooter && f.acceptPageBreak() {
-	//	// Automatic page break
-	//	x := f.x
-	//	ws := f.ws
-	//	// dbg("auto page break, x %.2f, ws %.2f", x, ws)
-	//	if ws > 0 {
-	//		f.ws = 0
-	//		f.out("0 Tw")
-	//	}
-	//	f.AddPageFormat(f.curOrientation, f.curPageSize)
-	//	if f.err != nil {
-	//		return
-	//	}
-
+func (c *cell) render(buf *buffer) {
 	if len(c.text) == 0 {
 		return
 	}
 
+	f := c.core.getFont(c.font)
+
 	dy := c.textDy()
 
-	c.core.print("BT ")
-	c.core.printFont(c.font, c.fontSize)
+	buf.print("BT ")
+	buf.printFont(c.font, c.fontSize)
 
 	for _, line := range c.text {
 		dx := c.textDx(line)
-		x, y := c.core.xy()
 
-		c.core.printXY(x+dx, y+dy)
-		c.core.print(" Td ")
-		c.core.printText(c.font, line)
-		c.core.printSpace()
+		buf.printXY(c.x+dx, c.y+dy)
+		buf.print(" Td ")
+		buf.printText(f.face, line)
+		buf.space()
 	}
 
-	c.core.print("ET")
+	buf.print("ET")
 
 	if c.border != "" {
-		c.drawBorder()
+		c.drawBorder(buf)
 	}
 }
 
-func (c *cell) drawBorder() {
-	x, y := c.core.xy()
+func (c *cell) drawBorder(buf *buffer) {
+	for _, b := range c.border {
+		if c.borderSize == 0 && unicode.IsUpper(b) {
+			c.borderSize = c.core.border.thick
+		}
 
-	if strings.ContainsRune(c.border, '+') {
-		c.borderSize = c.core.border.thick
-	}
+		var x0, y0, x1, y1 float64
 
-	if c.border == "1" {
-		// 1 w x0 y0 w h re S
-		c.core.printFloat64(c.borderSize)
-		c.core.print(" w ")
-		c.core.printXY(x, y)
-		c.core.printSpace()
-		c.core.printXY(c.width, -c.height)
-		c.core.print(" re S ")
+		switch b {
+		case 'o', 'O':
+			buf.printRect(c.borderSize, c.x, c.y, c.width, c.height)
 
-		return
-	}
+			return
+		case 't', 'T':
+			x0 = c.x
+			y0 = c.y
+			x1 = c.x + c.width
+			y1 = c.y
+		case 'r', 'R':
+			x0 = c.x + c.width
+			y0 = c.y
+			x1 = x0
+			y1 = c.y + c.height
+		case 'b', 'B':
+			x0 = c.x
+			y0 = c.y + c.height
+			x1 = c.x + c.width
+			y1 = y0
+		case 'l', 'L':
+			x0 = c.x
+			y0 = c.y
+			x1 = x0
+			y1 = c.y + c.height
+		default:
+		}
 
-	if strings.ContainsRune(c.border, 'T') {
-		// Top: верхняя граница
-		x0 := x
-		y0 := y
-		x1 := x + c.width
-		y1 := y
-
-		c.core.printLine(c.borderSize, x0, y0, x1, y1)
-	}
-
-	if strings.ContainsRune(c.border, 'R') {
-		// Right: правая граница
-		x0 := x + c.width
-		y0 := y
-		x1 := x0
-		y1 := y - c.height
-
-		c.core.printLine(c.borderSize, x0, y0, x1, y1)
-	}
-
-	if strings.ContainsRune(c.border, 'B') {
-		// Bottom: нижняя граница
-		x0 := x
-		y0 := y - c.height
-		x1 := x + c.width
-		y1 := y0
-
-		c.core.printLine(c.borderSize, x0, y0, x1, y1)
-	}
-
-	if strings.ContainsRune(c.border, 'L') {
-		// Left: левая граница
-		x0 := x
-		y0 := y
-		x1 := x0
-		y1 := y - c.height
-
-		c.core.printLine(c.borderSize, x0, y0, x1, y1)
+		buf.printLine(c.borderSize, x0, y0, x1, y1)
 	}
 }
 
@@ -160,5 +128,5 @@ func (c *cell) textDy() (dy float64) {
 		dy = 0
 	}
 
-	return -dy
+	return dy
 }
