@@ -2,7 +2,9 @@ package template
 
 import (
 	"bytes"
+	"math"
 	"strconv"
+	"strings"
 )
 
 const (
@@ -11,24 +13,29 @@ const (
 	inch = 25.4
 )
 
-func appendFloat(b *bytes.Buffer, val float64) {
+func writeFloat64(b *bytes.Buffer, val float64) {
 	buf := b.AvailableBuffer()
 	buf = strconv.AppendFloat(buf, val, 'f', 2, 64)
+
 	b.Write(buf)
 }
 
-func appendInt(b *bytes.Buffer, val int64) {
+func writeInt64(b *bytes.Buffer, val int64) {
 	buf := b.AvailableBuffer()
 	buf = strconv.AppendInt(buf, val, 10)
+
 	b.Write(buf)
 }
 
-func appendInt10(b *bytes.Buffer, val int64) {
-	// Преобразуем в десятичное представление
-	var tmp [12]byte // достаточно для int под 32/64
-	buf := strconv.AppendInt(tmp[:0], val, 10)
-	// Дописываем нули впереди до длины 10
-	zeros := 10 - len(buf)
+func writeInt64D10(b *bytes.Buffer, val int64) {
+	const size = 10
+	tmp := make([]byte, 0, size)
+
+	buf := b.AvailableBuffer()
+	buf = strconv.AppendInt(tmp[:0], val, 10)
+
+	zeros := size - len(buf)
+
 	for zeros > 0 {
 		b.WriteByte('0')
 		zeros--
@@ -37,26 +44,82 @@ func appendInt10(b *bytes.Buffer, val int64) {
 	b.Write(buf)
 }
 
-func appendHex4(b *bytes.Buffer, val uint16) {
+func writeUint16(b *bytes.Buffer, val uint16) {
+	buf := b.AvailableBuffer()
+	buf = strconv.AppendUint(buf, uint64(val), 10)
+
+	b.Write(buf)
+}
+
+func writeUint16D4(b *bytes.Buffer, val uint16) {
 	buf := b.AvailableBuffer()
 	buf = append(buf,
-		//'<',
 		hex[(val>>12)&0xF],
 		hex[(val>>8)&0xF],
 		hex[(val>>4)&0xF],
 		hex[val&0xF],
-		//'>',
 	)
 
 	b.Write(buf)
 }
 
-// Возвращает пункты (кегль) в миллиметрах.
-func pt(v float64) float64 {
-	return v / (dpi / inch)
+func splitText(f *font, text string, size int, width float64) []string {
+	lines := make([]string, 0)
+
+	for seg := range strings.Lines(text) {
+		lines = append(lines, splitSegment(f, seg, size, width)...)
+	}
+
+	return lines
+}
+
+func splitSegment(f *font, text string, size int, width float64) []string {
+	words := strings.Fields(text)
+
+	lines := make([]string, 0, len(words))
+
+	line := words[0]
+
+	for _, word := range words[1:] {
+		candidate := line + " " + word
+
+		candidateWidth := f.measureText(size, candidate)
+		if candidateWidth > width {
+			lines = append(lines, line)
+
+			line = word
+
+			continue
+		}
+
+		line = candidate
+	}
+
+	lines = append(lines, line)
+
+	return lines
+}
+
+type scaler struct {
+	unitsPerEm float64
+}
+
+func newScaler(unitsPerEm int) *scaler {
+	return &scaler{unitsPerEm: float64(unitsPerEm)}
+}
+
+func (s *scaler) scale(v int) int {
+	k := 1000.0 / float64(s.unitsPerEm)
+
+	return int(math.Round(float64(v) * k))
 }
 
 // Возвращает миллиметры в пунктах
-func mm(v float64) float64 {
+func pt(v float64) float64 {
 	return v * (dpi / inch)
+}
+
+// Возвращает пункты (кегль) в миллиметрах.
+func mm(v float64) float64 {
+	return v / (dpi / inch)
 }

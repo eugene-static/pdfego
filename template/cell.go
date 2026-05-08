@@ -1,6 +1,7 @@
 package template
 
 import (
+	"log/slog"
 	"strings"
 	"unicode"
 )
@@ -14,7 +15,7 @@ type cell struct {
 	colspan    int
 	rowspan    int
 	font       string
-	fontSize   float64
+	fontSize   int
 	border     string
 	borderSize float64
 	align      string
@@ -30,11 +31,11 @@ type CellOpts struct {
 	Border     string
 	BorderSize float64
 	Font       string
-	FontSize   byte
+	FontSize   int
 	Wrap       bool
 }
 
-// BT /[FontAlias] [FontSize] Tf [X] [Y] Td <[TextHex]> Tj ET
+// BT /[FontAlias] [FontSize] Tf 1 0 0 1 [X] [Y] Tm <[TextHex]> Tj ET
 func (c *cell) render(buf *buffer) {
 	if len(c.text) == 0 {
 		return
@@ -42,21 +43,24 @@ func (c *cell) render(buf *buffer) {
 
 	f := c.core.getFont(c.font)
 
-	dy := c.textDy()
-
-	buf.print("BT ")
+	buf.print("BT\n")
 	buf.printFont(c.font, c.fontSize)
 
-	for _, line := range c.text {
+	for i, line := range c.text {
 		dx := c.textDx(line)
+		dy := c.textDy(i)
 
-		buf.printXY(c.x+dx, c.y+dy)
-		buf.print(" Td ")
-		buf.printText(f.face, line)
-		buf.space()
+		x, y := c.core.ptXY(c.x+dx, c.y+dy)
+
+		// "1 0 0 1 x y Tm" задает абсолютную позицию текста на странице.
+		buf.print("1 0 0 1 ")
+		buf.printXY(x, y)
+		buf.print(" Tm ")
+		buf.printText(f, line)
+		buf.print(" Tj\n")
 	}
 
-	buf.print("ET")
+	buf.print("ET\n")
 
 	if c.border != "" {
 		c.drawBorder(buf)
@@ -65,15 +69,23 @@ func (c *cell) render(buf *buffer) {
 
 func (c *cell) drawBorder(buf *buffer) {
 	for _, b := range c.border {
-		if c.borderSize == 0 && unicode.IsUpper(b) {
-			c.borderSize = c.core.border.thick
+		bs := c.borderSize
+
+		if c.borderSize == 0 {
+			bs = c.core.border.thin
+			if unicode.IsUpper(b) {
+				bs = c.core.border.thick
+			}
 		}
 
 		var x0, y0, x1, y1 float64
 
 		switch b {
 		case 'o', 'O':
-			buf.printRect(c.borderSize, c.x, c.y, c.width, c.height)
+			x, y := c.core.ptXY(c.x, c.y)
+			w, h := pt(c.width), pt(c.height)
+
+			buf.printRect(bs, x, y, w, h)
 
 			return
 		case 't', 'T':
@@ -97,26 +109,41 @@ func (c *cell) drawBorder(buf *buffer) {
 			x1 = x0
 			y1 = c.y + c.height
 		default:
+			continue
 		}
 
-		buf.printLine(c.borderSize, x0, y0, x1, y1)
+		x0, y0 = c.core.ptXY(x0, y0)
+		x1, y1 = c.core.ptXY(x1, y1)
+
+		buf.printLine(bs, x0, y0, x1, y1)
 	}
 }
 
 func (c *cell) textDx(text string) (dx float64) {
+	f := c.core.getFont(c.font)
+
 	switch {
 	case strings.ContainsRune(c.align, 'R'):
-		dx = c.width - c.core.measureText(c.font, c.fontSize, text)
+		textWidth := f.measureText(c.fontSize, text)
+
+		c.core.log.Debug("width", slog.String("text", text), slog.Float64("mm", textWidth))
+
+		dx = c.width - textWidth
 	case strings.ContainsRune(c.align, 'C'):
-		dx = (c.width - c.core.measureText(c.font, c.fontSize, text)) / 2
+		textWidth := f.measureText(c.fontSize, text)
+
+		c.core.log.Debug("width", slog.String("text", text), slog.Float64("mm", textWidth))
+
+		dx = (c.width - textWidth) / 2
 	default:
-		dx = 0
+		// чтобы текст не прилипал к границе
+		dx = 0.2
 	}
 
 	return dx
 }
 
-func (c *cell) textDy() (dy float64) {
+func (c *cell) textDy(index int) (dy float64) {
 	lenLines := len(c.text)
 
 	switch {
@@ -125,8 +152,13 @@ func (c *cell) textDy() (dy float64) {
 	case strings.ContainsRune(c.align, 'M'):
 		dy = (c.height - float64(lenLines)*c.core.fontHeight) / 2
 	default:
-		dy = 0
+		dy = 0.1
 	}
+
+	// index + 1 необходим для того, чтобы выставить Y-координату по верхнему краю шрифта.
+	// PDF считает Y от нижней границы страницы, а здесь все координаты указаны от верхней. К тому же позиционирует шрифт по baseline.
+	// Поэтому для верного позиционирования шрифта нам необходимо добавить еще одну высоту строки.
+	dy += float64(index+1) * c.core.fontHeight
 
 	return dy
 }

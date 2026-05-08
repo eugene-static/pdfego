@@ -4,9 +4,10 @@ import (
 	"bytes"
 	"fmt"
 	"testing"
+	"unicode/utf16"
 )
 
-func Test_AppendInt10(t *testing.T) {
+func Test_WriteInt64d10(t *testing.T) {
 	b := new(bytes.Buffer)
 
 	cases := map[string]struct {
@@ -15,13 +16,21 @@ func Test_AppendInt10(t *testing.T) {
 	}{
 		"65": {
 			value:    65,
-			expected: fmt.Sprintf("%10d", 65),
+			expected: fmt.Sprintf("%010d", 65),
+		},
+		"100": {
+			value:    100,
+			expected: fmt.Sprintf("%010d", 100),
+		},
+		"0": {
+			value:    0,
+			expected: fmt.Sprintf("%010d", 0),
 		},
 	}
 
 	for k, tc := range cases {
 		t.Run(k, func(t *testing.T) {
-			appendInt10(b, tc.value)
+			writeInt64D10(b, tc.value)
 
 			got := b.String()
 
@@ -30,4 +39,32 @@ func Test_AppendInt10(t *testing.T) {
 			}
 		})
 	}
+}
+
+func Test_Rowspan(t *testing.T) {
+	b := new(bytes.Buffer)
+
+	cases := map[string]struct {
+		value    string
+		expected string
+	}{
+		"привет": {
+			value:    "П",
+			expected: fmt.Sprintf("%04X", "П"),
+		},
+	}
+
+	for k, tc := range cases {
+		t.Run(k, func(t *testing.T) {
+			idxs := utf16.Encode([]rune(tc.value))
+			writeUint16D4(b, idxs[0])
+
+			got := b.String()
+
+			if got != tc.expected {
+				t.Errorf("AppendUint16D4(%s): got %q, want %q", tc.value, got, tc.expected)
+			}
+		})
+	}
+
 }

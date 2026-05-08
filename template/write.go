@@ -7,6 +7,19 @@ const (
 	resources = 2
 )
 
+func (core *Core) fillBuffer() {
+	core.writeFileHeader()
+	core.writePages()
+	core.writeResources()
+
+	infoObj := core.writeInfo()
+	rootObj := core.writeCatalog()
+	xrefOffset := core.writeXref()
+
+	core.writeTrailer(rootObj, infoObj)
+	core.writeEOF(xrefOffset)
+}
+
 func (core *Core) writeResources() {
 	type fontResource struct {
 		alias  string
@@ -44,6 +57,7 @@ func (core *Core) writeResources() {
 
 func (core *Core) writeFont(f *font) int64 {
 	b := core.mainBuffer
+	alias := "/" + f.alias
 
 	// ---------- (Type0) ----------
 	// "9 0 obj<< /Type /Font /Subtype /Type0 /BaseFont /%font_name /Encoding /Identity-H /DescendantFonts [10 0 R] >>endobj\n"
@@ -55,7 +69,7 @@ func (core *Core) writeFont(f *font) int64 {
 	b.openObjectParameters()
 	b.printFieldString("/Type", "/Font")
 	b.printFieldString("/Subtype", "/Type0")
-	b.printFieldString("/BaseFont", f.alias)
+	b.printFieldString("/BaseFont", alias)
 	b.printFieldString("/Encoding", "/Identity-H")
 	b.printRefArray("/DescendantFonts", []int64{fontNum + 1})
 	b.closeObjectParameters()
@@ -71,10 +85,11 @@ func (core *Core) writeFont(f *font) int64 {
 	b.openObjectParameters()
 	b.printFieldString("/Type", "/Font")
 	b.printFieldString("/Subtype", "/CIDFontType2")
-	b.printFieldString("/BaseFont", f.alias)
+	b.printFieldString("/BaseFont", alias)
 	b.printFieldString("/CIDSystemInfo", "<< /Registry(Adobe) /Ordering(Identity) /Supplement 0 >>")
 	b.printRef("/FontDescriptor", objNum+1)
-	b.printFieldInt("/DW", 1000)
+	b.printFieldInt("/DW", 600)
+	b.printGlyphWidthTable(f.glyphAdvances())
 	b.closeObjectParameters()
 	b.endObj()
 
@@ -87,7 +102,7 @@ func (core *Core) writeFont(f *font) int64 {
 	b.startObj(objNum)
 	b.openObjectParameters()
 	b.printFieldString("/Type", "/FontDescriptor")
-	b.printFieldString("/FontName", f.alias)
+	b.printFieldString("/FontName", alias)
 	b.printFieldInt("/Flags", 4)
 	b.printFieldIntArray("/FontBBox", f.fontBBox)
 	b.printFieldInt("/ItalicAngle", 0) //TODO: Italic Font
@@ -107,11 +122,12 @@ func (core *Core) writeFont(f *font) int64 {
 
 	b.startObj(objNum)
 	b.openObjectParameters()
-	b.printFieldInt("/Length", f.buf.Len())
-	b.printFieldInt("/Length1", f.buf.Len())
+	b.printFieldString("/Filter", "/FlateDecode")
+	b.printFieldInt("/Length", f.compressedData.Len())
+	b.printFieldInt("/Length1", f.uncompressedLen)
 	b.closeObjectParameters()
 	b.startStream()
-	b.writeFrom(f.buf)
+	b.writeFrom(f.compressedData)
 	b.endStream()
 	b.endObj()
 
@@ -177,7 +193,7 @@ func (core *Core) writeFileHeader() {
 	core.mainBuffer.print("%\x80\x80\x80\x80\n")
 }
 
-func (core *Core) writeInfo() {
+func (core *Core) writeInfo() int64 {
 	creationDate := time.Now().Format("D:20060102150405-07'00'")
 
 	b := core.mainBuffer
@@ -191,9 +207,11 @@ func (core *Core) writeInfo() {
 	b.printFieldStringWithBrackets("/CreationDate", creationDate)
 	b.closeObjectParameters()
 	b.endObj()
+
+	return objNum
 }
 
-func (core *Core) writeCatalog() {
+func (core *Core) writeCatalog() int64 {
 	b := core.mainBuffer
 	objNum := core.getObjNum()
 
@@ -205,6 +223,8 @@ func (core *Core) writeCatalog() {
 	b.printRef("/Pages", pages)
 	b.closeObjectParameters()
 	b.endObj()
+
+	return objNum
 }
 
 func (core *Core) writeXref() int {
@@ -212,8 +232,36 @@ func (core *Core) writeXref() int {
 
 	b := core.mainBuffer
 
-	b.print("xref")
+	b.print("xref\n")
 	b.printFieldInt("0", len(core.offsets))
+	b.print("0000000000 65535 f\n")
+	for i := range core.offsets {
+		if i == 0 {
+			continue
+		}
+
+		b.printXref(core.offsets[i])
+	}
 
 	return xrefOffset
+}
+
+func (core *Core) writeTrailer(root, info int64) {
+	b := core.mainBuffer
+
+	b.print("trailer\n")
+	b.openObjectParameters()
+	b.printFieldInt("/Size", len(core.offsets))
+	b.printRef("/Root", root)
+	b.printRef("/Info", info)
+	b.closeObjectParameters()
+}
+
+func (core *Core) writeEOF(xrefOffset int) {
+	b := core.mainBuffer
+
+	b.print("startxref\n")
+	b.printInt64(int64(xrefOffset))
+	b.ln()
+	b.print("%%EOF\n")
 }

@@ -1,6 +1,7 @@
 package template
 
 import (
+	"bytes"
 	"slices"
 )
 
@@ -12,12 +13,12 @@ const (
 
 type Template struct {
 	core   *Core
-	frames []Frame
+	frames []*Frame
 }
 
 type Frame struct {
 	core    *Core
-	fields  []Field
+	fields  []*Field
 	profile byte
 }
 
@@ -58,10 +59,11 @@ func (t *Template) EndHeader() *Frame {
 
 func (t *Template) frame(profile byte) *Frame {
 	frame := Frame{
+		core:    t.core,
 		profile: profile,
 	}
 
-	t.frames = append(t.frames, frame)
+	t.frames = append(t.frames, &frame)
 
 	return &frame
 }
@@ -89,7 +91,7 @@ func (t *Template) Render() {
 		x, y := t.core.xy()
 		height := t.frames[i].height()
 
-		if y+height > t.core.page.height {
+		if pt(y+height) > t.core.page.height {
 			buf = t.core.addPage()
 
 			x, y = t.core.xy()
@@ -101,7 +103,11 @@ func (t *Template) Render() {
 		t.core.setXY(x, y+height)
 	}
 
-	t.core.writePages()
+	t.core.fillBuffer()
+}
+
+func (t *Template) Buffer() *bytes.Buffer {
+	return t.core.mainBuffer.content
 }
 
 func (f *Frame) Field() *Field {
@@ -109,7 +115,7 @@ func (f *Frame) Field() *Field {
 		core: f.core,
 	}
 
-	f.fields = append(f.fields, field)
+	f.fields = append(f.fields, &field)
 
 	return &field
 }

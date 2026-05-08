@@ -22,6 +22,7 @@ func (b *buffer) reset() {
 
 func (b *buffer) writeFrom(buf *bytes.Buffer) {
 	buf.WriteTo(b.content) //TODO: обработка ошибок
+	b.ln()
 }
 
 func (b *buffer) print(s ...string) {
@@ -30,25 +31,31 @@ func (b *buffer) print(s ...string) {
 	}
 }
 
-func (b *buffer) printText(font *sfnt.Font, text string) {
+func (b *buffer) printText(font *font, text string) {
 	b.content.WriteByte('<')
 	defer b.content.WriteByte('>')
 
 	var buf sfnt.Buffer
 
 	for _, r := range text {
-		idx, _ := font.GlyphIndex(&buf, r) //err is always nil
+		idx, _ := font.face.GlyphIndex(&buf, r) //err is always nil
 
-		appendHex4(b.content, uint16(idx))
+		font.saveIndex(&buf, r, idx)
+
+		writeUint16D4(b.content, uint16(idx))
 	}
 }
 
 func (b *buffer) printFloat64(v float64) {
-	appendFloat(b.content, pt(v))
+	writeFloat64(b.content, v)
 }
 
 func (b *buffer) printInt64(v int64) {
-	appendInt(b.content, v)
+	writeInt64(b.content, v)
+}
+
+func (b *buffer) printUint16(v uint16) {
+	writeUint16(b.content, v)
 }
 
 func (b *buffer) space() {
@@ -60,10 +67,37 @@ func (b *buffer) ln() {
 }
 
 // /REG 14 Tf
-func (b *buffer) printFont(font string, fontSize float64) {
-	b.print("/", font, " ")
-	b.printFloat64(fontSize)
-	b.print(" Tf ")
+func (b *buffer) printFont(alias string, fontSize int) {
+	b.print("/", alias, " ")
+	b.printFloat64(float64(fontSize))
+	b.print(" Tf\n")
+}
+
+// /W [1 [100] 3 [95 83 99]]
+func (b *buffer) printGlyphWidthTable(glyphAdvances []glyph) {
+	b.print("/W [")
+
+	prev := uint16(0)
+	for _, gl := range glyphAdvances {
+		if gl.index == prev+1 {
+			b.print(" ")
+			b.printInt64(int64(gl.advance))
+
+			continue
+		}
+
+		if prev > 0 {
+			b.print("] ")
+		}
+
+		b.printUint16(gl.index)
+		b.print(" [")
+		b.printInt64(int64(gl.advance))
+
+		prev = gl.index
+	}
+
+	b.print("]]\n")
 }
 
 // 0 0
@@ -127,6 +161,11 @@ func (b *buffer) printRefArray(field string, objNums []int64) {
 	b.print("]\n")
 }
 
+func (b *buffer) printXref(ref int) {
+	writeInt64D10(b.content, int64(ref))
+	b.print(" 00000 n\n")
+}
+
 // /Flag 4
 func (b *buffer) printFieldInt(field string, value int) {
 	b.print(field, " ")
@@ -144,11 +183,11 @@ func (b *buffer) printFieldStringWithBrackets(field, value string) {
 }
 
 // /FontBBox [-50 -200 800 800]
-func (b *buffer) printFieldIntArray(field string, arr []int64) {
+func (b *buffer) printFieldIntArray(field string, arr []int) {
 	b.print(field, " [")
 
 	for i := range arr {
-		b.printInt64(arr[i])
+		b.printInt64(int64(arr[i]))
 		if i < len(arr)-1 {
 			b.space()
 		}

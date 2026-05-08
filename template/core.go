@@ -1,15 +1,18 @@
 package template
 
+import "log/slog"
+
 const (
-	FontRegular = "R"
-	FontBold    = "B"
-	FontItalic  = "I"
+	FontRegular = "REG"
+	FontBold    = "BOLD"
+	FontItalic  = "ITALIC"
 
 	Portrait  = "P"
 	Landscape = "L"
 )
 
 type Core struct {
+	log         *slog.Logger
 	mainBuffer  *buffer
 	headBuffer  *buffer
 	pageBuffers []*buffer
@@ -17,7 +20,7 @@ type Core struct {
 	page        page
 	border      border
 	fonts       map[string]*font
-	fontSize    float64
+	fontSize    int
 	fontHeight  float64
 	pagesCount  int64
 	offsets     []int
@@ -60,12 +63,16 @@ func (core *Core) SetBorders(thin, thick float64) {
 	}
 }
 
+func (core *Core) SetLogger(log *slog.Logger) {
+	core.log = log
+}
+
 func (core *Core) x() float64 {
 	return core.cursor.x
 }
 
 func (core *Core) y() float64 {
-	return core.page.height - core.cursor.y
+	return core.cursor.y
 }
 
 func (core *Core) x0() float64 {
@@ -111,4 +118,16 @@ func (core *Core) setOffset(offset int) {
 
 func (core *Core) getObjNum() int64 {
 	return int64(len(core.offsets))
+}
+
+func (core *Core) ptX(x float64) float64 {
+	return pt(x)
+}
+
+func (core *Core) ptY(y float64) float64 {
+	return core.page.height - pt(y)
+}
+
+func (core *Core) ptXY(x, y float64) (float64, float64) {
+	return core.ptX(x), core.ptY(y)
 }

@@ -22,3 +22,11 @@ func (core *Core) addPage() *buffer {
 
 	return buf
 }
+
+func (core *Core) pageBottomEdge() float64 {
+	return mm(core.page.height) - core.page.margin
+}
+
+func (core *Core) pageRightEdge() float64 {
+	return mm(core.page.width) - core.page.margin
+}

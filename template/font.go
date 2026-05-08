@@ -2,23 +2,36 @@ package template
 
 import (
 	"bytes"
+	"cmp"
+	"compress/zlib"
 	"os"
+	"slices"
 
-	font_face "golang.org/x/image/font"
+	image_font "golang.org/x/image/font"
 	"golang.org/x/image/font/sfnt"
 	"golang.org/x/image/math/fixed"
 )
 
 type font struct {
-	alias      string
-	face       *sfnt.Font
-	buf        *bytes.Buffer
-	ascent     int
-	descent    int
-	capHeight  int
-	stemV      int
-	fontBBox   []int64
-	unitsPerEm int32
+	alias           string
+	face            *sfnt.Font
+	compressedData  *bytes.Buffer
+	uncompressedLen int
+	glyphMap        map[rune]struct{}
+	glyphs          []glyph
+	ascent          int
+	descent         int
+	capHeight       int
+	stemV           int
+	hinting         image_font.Hinting
+	unitsPerEm      int
+	fontBBox        []int
+}
+
+type glyph struct {
+	rune    uint16
+	index   uint16
+	advance int
 }
 
 func (core *Core) SetFont(path, alias string) error {
@@ -48,12 +61,12 @@ func (core *Core) SetFontBold(path string) error {
 	return nil
 }
 
-func (core *Core) SetDefaultFontSize(fontSize float64) {
+func (core *Core) SetDefaultFontSize(fontSize int) {
 	core.fontSize = fontSize
-	core.fontHeight = mm(fontSize) * 1.2
+	core.fontHeight = mm(float64(fontSize)) * 1.2
 }
 
-func (core *Core) setFont(alias, path string) error {
+func (core *Core) setFont(path, alias string) error {
 	fontBytes, err := os.ReadFile(path)
 	if err != nil {
 		return err
@@ -64,82 +77,96 @@ func (core *Core) setFont(alias, path string) error {
 		return err
 	}
 
-	unitsPerEm := int32(sfntFont.UnitsPerEm())
+	unitsPerEm := int(sfntFont.UnitsPerEm())
+	ppem := fixed.I(unitsPerEm)
+	hinting := image_font.HintingNone
 
-	scale := fixed.Int26_6(unitsPerEm)
+	sc := newScaler(unitsPerEm)
 
 	var buf sfnt.Buffer
 
-	metrics, err := sfntFont.Metrics(&buf, scale, font_face.HintingNone)
+	metrics, err := sfntFont.Metrics(&buf, ppem, hinting)
 	if err != nil {
 		return err
 	}
 
-	ascent := metrics.Ascent.Round()
-	descent := metrics.Descent.Round()
-	capHeight := metrics.CapHeight.Round()
+	ascent := sc.scale(metrics.Ascent.Round())
+	descent := sc.scale(metrics.Descent.Round())
+	capHeight := sc.scale(metrics.CapHeight.Round())
 
-	bounds, err := sfntFont.Bounds(&buf, scale, font_face.HintingNone)
+	bounds, err := sfntFont.Bounds(&buf, ppem, hinting)
 	if err != nil {
 		return err
 	}
 
-	fontBox := []int64{
-		int64(bounds.Min.X.Round()),
-		int64(bounds.Min.Y.Round()),
-		int64(bounds.Max.X.Round()),
-		int64(bounds.Max.Y.Round()),
+	fontBox := []int{
+		sc.scale(bounds.Min.X.Round()),
+		-sc.scale(bounds.Max.Y.Round()),
+		sc.scale(bounds.Max.X.Round()),
+		-sc.scale(bounds.Min.Y.Round()),
 	}
 
-	stemV := 80
+	glyphAdvanceRounded := 80
 
 	glyphIndex, err := sfntFont.GlyphIndex(&buf, 'I')
 	if err != nil {
 		return err
 	}
 
-	glyphAdvance, err := sfntFont.GlyphAdvance(&buf, glyphIndex, scale, font_face.HintingNone)
+	glyphAdvance, err := sfntFont.GlyphAdvance(&buf, glyphIndex, ppem, hinting)
 	if err != nil {
 		return err
 	}
 
-	glyphAdvanceRounded := glyphAdvance.Round()
+	glyphAdvanceRounded = glyphAdvance.Round()
 	if glyphAdvanceRounded > 20 && glyphAdvanceRounded < 200 {
-		stemV = glyphAdvanceRounded * 3 / 4
+		glyphAdvanceRounded = glyphAdvanceRounded * 3 / 4
+	}
+
+	stemV := glyphAdvanceRounded
+
+	b := new(bytes.Buffer)
+	w := zlib.NewWriter(b)
+	defer w.Close()
+
+	_, err = w.Write(fontBytes)
+	if err != nil {
+		return err
 	}
 
 	core.fonts[alias] = &font{
-		alias:      alias,
-		face:       sfntFont,
-		buf:        bytes.NewBuffer(fontBytes),
-		ascent:     ascent,
-		descent:    descent,
-		capHeight:  capHeight,
-		stemV:      stemV,
-		fontBBox:   fontBox,
-		unitsPerEm: unitsPerEm,
+		alias:           alias,
+		face:            sfntFont,
+		compressedData:  b,
+		uncompressedLen: len(fontBytes),
+		glyphMap:        make(map[rune]struct{}),
+		glyphs:          make([]glyph, 0, 256),
+		ascent:          ascent,
+		descent:         -descent,
+		capHeight:       capHeight,
+		stemV:           stemV,
+		fontBBox:        fontBox,
+		unitsPerEm:      unitsPerEm,
+		hinting:         hinting,
 	}
 
 	return nil
 }
 
-func (core *Core) measureText(fontAlias string, fontSize float64, text string) float64 {
-	f := core.getFont(fontAlias)
-
-	const hinting = 0
-
+func (f *font) measureText(fontSize int, text string) float64 {
 	var (
 		advance fixed.Int26_6
 		buf     sfnt.Buffer
 	)
 
-	scale := fixed.Int26_6(fontSize * 64)
+	ppemFont := fixed.I(fontSize)
+	//ppem := fixed.I(f.unitsPerEm)
 	prevGlyphIndex := sfnt.GlyphIndex(0)
 
 	for _, c := range text {
 		glyphIndex, _ := f.face.GlyphIndex(&buf, c) // err is always nil
 
-		adv, err := f.face.GlyphAdvance(&buf, glyphIndex, scale, hinting)
+		adv, err := f.face.GlyphAdvance(&buf, glyphIndex, ppemFont, f.hinting)
 		if err != nil {
 			//TODO: обработка ошибок
 		}
@@ -147,7 +174,7 @@ func (core *Core) measureText(fontAlias string, fontSize float64, text string) f
 		advance += adv
 
 		if prevGlyphIndex > 0 {
-			kern, err := f.face.Kern(&buf, prevGlyphIndex, glyphIndex, scale, hinting)
+			kern, err := f.face.Kern(&buf, prevGlyphIndex, glyphIndex, ppemFont, f.hinting)
 			if err != nil {
 				//TODO: обработка ошибок
 			}
@@ -158,11 +185,41 @@ func (core *Core) measureText(fontAlias string, fontSize float64, text string) f
 		prevGlyphIndex = glyphIndex
 	}
 
-	width := float64(advance) / 64.0
+	width := float64(advance >> 6)
 
 	return mm(width)
 }
 
+func (f *font) saveIndex(buf *sfnt.Buffer, r rune, index sfnt.GlyphIndex) {
+	_, ok := f.glyphMap[r]
+	if ok {
+		return
+	}
+
+	sc := newScaler(f.unitsPerEm)
+	ppem := fixed.I(f.unitsPerEm)
+
+	adv, err := f.face.GlyphAdvance(buf, index, ppem, f.hinting)
+	if err != nil {
+		adv = 600
+	}
+
+	f.glyphs = append(f.glyphs, glyph{
+		rune:    uint16(r),
+		index:   uint16(index),
+		advance: sc.scale(adv.Round()),
+	})
+
+	f.glyphMap[r] = struct{}{}
+}
+
+func (f *font) glyphAdvances() []glyph {
+	slices.SortFunc(f.glyphs, func(a, b glyph) int {
+		return cmp.Compare(a.index, b.index)
+	})
+
+	return f.glyphs
+}
 func (core *Core) getFont(alias string) *font {
 	return core.fonts[alias]
 }

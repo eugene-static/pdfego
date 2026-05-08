@@ -23,11 +23,15 @@ func (r *Row) Cell(text string, opts ...CellOpts) {
 
 	r.setColIndex()
 
+	if r.columnIndex > r.columnsLen {
+		//TODO: error to prevent panic
+	}
+
 	c := r.newCell(text, opt)
 
 	r.cells[r.columnIndex] = c
 
-	r.updateRowSpans(c.rowspan)
+	//r.updateRowSpans(c.rowspan)
 
 	r.updateColIndex(c.colspan)
 }
@@ -55,7 +59,7 @@ func (r *Row) newCell(text string, opts CellOpts) cell {
 	}
 
 	if opts.FontSize > 0 {
-		c.fontSize = float64(opts.FontSize)
+		c.fontSize = opts.FontSize
 	}
 
 	if opts.Border != "" {
@@ -64,6 +68,10 @@ func (r *Row) newCell(text string, opts CellOpts) cell {
 
 	if opts.BorderSize > 0 {
 		c.borderSize = opts.BorderSize
+	}
+
+	if opts.Align != "" {
+		c.align = opts.Align
 	}
 
 	if opts.Colspan > 1 {
@@ -79,7 +87,9 @@ func (r *Row) newCell(text string, opts CellOpts) cell {
 	var height float64
 
 	if opts.Wrap {
-		split := c.core.splitText(text, c.font, c.fontSize, c.width)
+		f := c.core.getFont(c.font)
+
+		split := splitText(f, text, c.fontSize, c.width)
 		height = c.core.fontHeight * float64(len(split))
 
 		c.text = split
@@ -93,7 +103,11 @@ func (r *Row) newCell(text string, opts CellOpts) cell {
 // Поле cell.height должно быть равно высоте строки, но пока все ячейки не будут созданы, мы не знаем итоговую высоту строки.
 // Поэтому высота ячейки будет определяться в методе render().
 func (r *Row) setHeight(heights ...float64) {
-	r.height = max(r.height, heights...)
+	for _, h := range heights {
+		if h > r.height {
+			r.height = h
+		}
+	}
 }
 
 // Ширина ячейки равна сумме ширин всех колонок, которые она занимает.
@@ -107,7 +121,7 @@ func (r *Row) cellWidth(colspan int) (w float64) {
 
 // Если ячейки предыдущей строки имели rowspan, то мы ищем первую ячейку, которая rowspan не имела, и сдвигаем курсор на неё.
 func (r *Row) setColIndex() {
-	for r.columnIndex < r.columnsLen || r.rowspans[r.columnIndex] > 0 {
+	for r.columnIndex < r.columnsLen && r.rowspans[r.columnIndex] > 0 {
 		r.columnIndex++
 	}
 }
@@ -116,8 +130,8 @@ func (r *Row) setColIndex() {
 // Сдвигаем курсор к следующей ячейке.
 func (r *Row) updateColIndex(colspan int) {
 	for i := r.columnIndex; i < min(r.columnIndex+colspan, r.columnsLen); i++ {
-		r.rowspans[i] += colspan
-		r.columnIndex++
+		r.rowspans[i]++
+		r.columnIndex = i
 	}
 }
 
