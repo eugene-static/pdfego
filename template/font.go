@@ -231,3 +231,26 @@ func (core *Core) fontRegular() *font {
 func (core *Core) fontBold() *font {
 	return core.fonts["B"]
 }
+
+//9 0 obj
+//<< /Length 432 >>
+//stream
+///CIDInit /ProcSet findresource begin
+//12 dict begin
+//begincmap
+///CIDSystemInfo << /Registry (Adobe) /Ordering (UCS) /Supplement 0 >> def
+///CMapName /Adobe-Identity-UCS def
+///CMapType 2 def
+//1 begincodespacerange
+//<0000> <FFFF>
+//endcodespacerange
+//1 beginbfchar
+//<01CE> <0434>  % Глиф 01CE это русская 'д' (U+0434)
+//<01D8> <043E>  % Глиф 01D8 это русская 'о' (U+043E)
+//endbfchar
+//endcmap
+//CMapName currentdict /CMap defineresource pop
+//end
+//end
+//endstream
+//endobj
