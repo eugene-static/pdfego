@@ -84,13 +84,16 @@ func (r *Row) newCell(text string, opts CellOpts) cell {
 
 	c.width = r.cellWidth(c.colspan)
 
-	var height float64
+	height := c.core.fontHeight
+
+	f := c.core.getFont(c.font)
+
+	f.saveRunes(text)
 
 	if opts.Wrap {
-		f := c.core.getFont(c.font)
-
 		split := splitText(f, text, c.fontSize, c.width)
-		height = c.core.fontHeight * float64(len(split))
+
+		height *= float64(len(split))
 
 		c.text = split
 	}

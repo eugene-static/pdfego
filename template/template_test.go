@@ -33,27 +33,27 @@ func TestTemplate(t *testing.T) {
 	tmpl.TitleHeader(field1)
 
 	tmpl.Render()
-
-	buf := tmpl.Buffer()
-
-	output, err := os.Create("output.pdf")
-	if err != nil {
-		t.Error(err)
-	}
-
-	defer output.Close()
-
-	_, err = output.Write(buf.Bytes())
-	if err != nil {
-		t.Error(err)
-	}
+	//
+	//buf := tmpl.Buffer()
+	//
+	//output, err := os.Create("output.pdf")
+	//if err != nil {
+	//	t.Error(err)
+	//}
+	//
+	//defer output.Close()
+	//
+	//_, err = output.Write(buf.Bytes())
+	//if err != nil {
+	//	t.Error(err)
+	//}
 }
 
 func (t *Template) TitleHeader(field *Field) {
 	table := field.Table(15, 5)
 
 	r1 := table.Row()
-	r1.Cell("Универсальный передаточный документ", CellOpts{Height: 20, Wrap: true, Colspan: 2, Align: "LT", Border: "tL"})
+	r1.Cell("Универсальный передаточный документ", CellOpts{Height: 20, Wrap: true, Colspan: 2, Align: "CT", Border: "tL"})
 	//r2 := table.Row()
 	//r2.Cell("Статус", CellOpts{Height: 4, Align: "LC"})
 	//r2.Cell("1", CellOpts{Height: 5, Align: "LC"})

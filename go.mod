@@ -1,11 +1,15 @@
 module dev_excelize
 
-go 1.25.0
+go 1.26.3
 
 require (
 	codeberg.org/go-pdf/fpdf v0.11.1
-	github.com/golang/freetype v0.0.0-20170609003504-e2365dfdc4a0
 	golang.org/x/image v0.39.0
 )
 
-require golang.org/x/text v0.36.0 // indirect
+require (
+	github.com/cdillond/gdf v0.1.19 // indirect
+	github.com/go-text/typesetting v0.3.4 // indirect
+	github.com/klauspost/compress v1.17.11 // indirect
+	golang.org/x/text v0.36.0 // indirect
+)

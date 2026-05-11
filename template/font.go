@@ -1,37 +1,58 @@
 package template
 
 import (
-	"bytes"
 	"cmp"
-	"compress/zlib"
+	"maps"
 	"os"
 	"slices"
+	"sync"
 
-	image_font "golang.org/x/image/font"
+	"github.com/cdillond/gdf"
 	"golang.org/x/image/font/sfnt"
 	"golang.org/x/image/math/fixed"
 )
 
+const (
+	hintingNone = 0
+)
+
 type font struct {
-	alias           string
-	face            *sfnt.Font
-	compressedData  *bytes.Buffer
-	uncompressedLen int
-	glyphMap        map[rune]struct{}
-	glyphs          []glyph
-	ascent          int
-	descent         int
-	capHeight       int
-	stemV           int
-	hinting         image_font.Hinting
-	unitsPerEm      int
-	fontBBox        []int
+	alias      string
+	face       *sfnt.Font
+	rawData    []byte
+	subsetData []byte
+	manager    fontManager
+	metrics    fontMetrics
+}
+
+type fontManager struct {
+	mu          sync.RWMutex
+	glyphsCache map[rune]*glyph
+	glyphs      []*glyph
+	dirtyFlag   bool
 }
 
 type glyph struct {
 	rune    uint16
-	index   uint16
-	advance int
+	index   sfnt.GlyphIndex
+	advance fixed.Int26_6
+}
+
+type fontMetrics struct {
+	ascent    int
+	descent   int
+	capHeight int
+	stemV     int
+	ppem      fixed.Int26_6
+	fontBBox  []int
+}
+
+func defaultGlyph() *glyph {
+	return &glyph{
+		rune:    '□',
+		index:   0,
+		advance: 600,
+	}
 }
 
 func (core *Core) SetFont(path, alias string) error {
@@ -66,6 +87,13 @@ func (core *Core) SetDefaultFontSize(fontSize int) {
 	core.fontHeight = mm(float64(fontSize)) * 1.2
 }
 
+// /Flags 4
+// /FontBBox [-203 -303 1050 910]
+// /ItalicAngle 0
+// /Ascent 905
+// /Descent -212
+// /CapHeight 688
+// /StemV 569
 func (core *Core) setFont(path, alias string) error {
 	fontBytes, err := os.ReadFile(path)
 	if err != nil {
@@ -77,35 +105,34 @@ func (core *Core) setFont(path, alias string) error {
 		return err
 	}
 
-	unitsPerEm := int(sfntFont.UnitsPerEm())
-	ppem := fixed.I(unitsPerEm)
-	hinting := image_font.HintingNone
-
-	sc := newScaler(unitsPerEm)
+	ppem := fixed.I(1000)
 
 	var buf sfnt.Buffer
 
-	metrics, err := sfntFont.Metrics(&buf, ppem, hinting)
+	sfntMetrics, err := sfntFont.Metrics(&buf, ppem, hintingNone)
 	if err != nil {
 		return err
 	}
 
-	ascent := sc.scale(metrics.Ascent.Round())
-	descent := sc.scale(metrics.Descent.Round())
-	capHeight := sc.scale(metrics.CapHeight.Round())
+	ascent := sfntMetrics.Ascent.Round()
+	descent := sfntMetrics.Descent.Round()
+	capHeight := sfntMetrics.CapHeight.Round()
 
-	bounds, err := sfntFont.Bounds(&buf, ppem, hinting)
+	bounds, err := sfntFont.Bounds(&buf, ppem, hintingNone)
 	if err != nil {
 		return err
 	}
 
-	fontBox := []int{
-		sc.scale(bounds.Min.X.Round()),
-		-sc.scale(bounds.Max.Y.Round()),
-		sc.scale(bounds.Max.X.Round()),
-		-sc.scale(bounds.Min.Y.Round()),
+	// [Min.X, Min.Y, Max.X, Max.Y]
+	// Min.Y и Max.Y поменяны местами нарочно ввиду того, что у PDF начало координат находится в левом нижнем углу.
+	fontBBox := []int{
+		bounds.Min.X.Round(),
+		-bounds.Max.Y.Round(),
+		bounds.Max.X.Round(),
+		-bounds.Min.Y.Round(),
 	}
 
+	// Среднее значение. Обычно такое и остается.
 	glyphAdvanceRounded := 80
 
 	glyphIndex, err := sfntFont.GlyphIndex(&buf, 'I')
@@ -113,7 +140,7 @@ func (core *Core) setFont(path, alias string) error {
 		return err
 	}
 
-	glyphAdvance, err := sfntFont.GlyphAdvance(&buf, glyphIndex, ppem, hinting)
+	glyphAdvance, err := sfntFont.GlyphAdvance(&buf, glyphIndex, ppem, hintingNone)
 	if err != nil {
 		return err
 	}
@@ -125,29 +152,33 @@ func (core *Core) setFont(path, alias string) error {
 
 	stemV := glyphAdvanceRounded
 
-	b := new(bytes.Buffer)
-	w := zlib.NewWriter(b)
-	defer w.Close()
+	//b := new(bytes.Buffer)
+	//w := zlib.NewWriter(b)
+	//defer w.Close()
+	//
+	//_, err = w.Write(fontBytes)
+	//if err != nil {
+	//	return err
+	//}
 
-	_, err = w.Write(fontBytes)
-	if err != nil {
-		return err
+	metrics := fontMetrics{
+		ascent:    ascent,
+		descent:   descent,
+		capHeight: capHeight,
+		stemV:     stemV,
+		ppem:      ppem,
+		fontBBox:  fontBBox,
 	}
 
 	core.fonts[alias] = &font{
-		alias:           alias,
-		face:            sfntFont,
-		compressedData:  b,
-		uncompressedLen: len(fontBytes),
-		glyphMap:        make(map[rune]struct{}),
-		glyphs:          make([]glyph, 0, 256),
-		ascent:          ascent,
-		descent:         -descent,
-		capHeight:       capHeight,
-		stemV:           stemV,
-		fontBBox:        fontBox,
-		unitsPerEm:      unitsPerEm,
-		hinting:         hinting,
+		alias:   alias,
+		face:    sfntFont,
+		rawData: fontBytes,
+		metrics: metrics,
+		manager: fontManager{
+			mu:          sync.RWMutex{},
+			glyphsCache: make(map[rune]*glyph),
+		},
 	}
 
 	return nil
@@ -159,22 +190,17 @@ func (f *font) measureText(fontSize int, text string) float64 {
 		buf     sfnt.Buffer
 	)
 
-	ppemFont := fixed.I(fontSize)
-	//ppem := fixed.I(f.unitsPerEm)
+	fontSizeEm := fixed.I(fontSize)
+	ppemFont := f.metrics.ppem.Mul(fontSizeEm)
 	prevGlyphIndex := sfnt.GlyphIndex(0)
 
 	for _, c := range text {
-		glyphIndex, _ := f.face.GlyphIndex(&buf, c) // err is always nil
+		gl := f.glyph(c)
 
-		adv, err := f.face.GlyphAdvance(&buf, glyphIndex, ppemFont, f.hinting)
-		if err != nil {
-			//TODO: обработка ошибок
-		}
-
-		advance += adv
+		advance += gl.advance.Mul(fontSizeEm)
 
 		if prevGlyphIndex > 0 {
-			kern, err := f.face.Kern(&buf, prevGlyphIndex, glyphIndex, ppemFont, f.hinting)
+			kern, err := f.face.Kern(&buf, prevGlyphIndex, gl.index, ppemFont, hintingNone)
 			if err != nil {
 				//TODO: обработка ошибок
 			}
@@ -182,75 +208,117 @@ func (f *font) measureText(fontSize int, text string) float64 {
 			advance += kern
 		}
 
-		prevGlyphIndex = glyphIndex
+		prevGlyphIndex = gl.index
 	}
 
-	width := float64(advance >> 6)
+	width := float64((advance / fixed.Int26_6(f.metrics.ppem.Round())).Round())
 
 	return mm(width)
 }
 
-func (f *font) saveIndex(buf *sfnt.Buffer, r rune, index sfnt.GlyphIndex) {
-	_, ok := f.glyphMap[r]
-	if ok {
+func (f *font) saveRunes(text string) {
+	for _, r := range text {
+		_, ok := f.manager.glyphsCache[r]
+		if ok {
+			continue
+		}
+
+		buf := new(sfnt.Buffer)
+
+		index, _ := f.face.GlyphIndex(buf, r) //err is always nil
+
+		adv, err := f.face.GlyphAdvance(buf, index, f.metrics.ppem, hintingNone)
+		if err != nil {
+			adv = 600
+		}
+
+		f.manager.addGlyph(r, index, adv)
+
+		f.manager.dirtyFlag = true
+	}
+}
+
+func (f *font) glyph(r rune) *glyph {
+	gl, ok := f.manager.glyphsCache[r]
+	if !ok {
+		gl = defaultGlyph()
+	}
+
+	return gl
+}
+
+func (f *font) glyphs() []*glyph {
+	if !f.manager.dirtyFlag {
+		return f.manager.glyphs
+	}
+
+	glyphs := slices.SortedFunc(maps.Values(f.manager.glyphsCache), func(g *glyph, g2 *glyph) int {
+		return cmp.Compare(g.index, g2.index)
+	})
+
+	f.manager.dirtyFlag = false
+	f.manager.glyphs = glyphs
+
+	return glyphs
+}
+
+func (f *font) subset() {
+	if !f.manager.dirtyFlag {
 		return
 	}
 
-	sc := newScaler(f.unitsPerEm)
-	ppem := fixed.I(f.unitsPerEm)
+	runes := make(map[rune]struct{})
 
-	adv, err := f.face.GlyphAdvance(buf, index, ppem, f.hinting)
-	if err != nil {
-		adv = 600
+	for r := range f.manager.glyphsCache {
+		runes[r] = struct{}{}
 	}
 
-	f.glyphs = append(f.glyphs, glyph{
+	subsetter := gdf.DefaultSubsetter{}
+
+	subsetter.Init(f.face, f.rawData, "")
+
+	fontTable, err := subsetter.Subset(runes)
+	if err != nil {
+		panic(err) //TODO:
+	}
+
+	sfntFont, err := sfnt.Parse(fontTable)
+	if err != nil {
+		panic(err)
+	}
+
+	f.face = sfntFont
+
+	buf := new(sfnt.Buffer)
+
+	for r, gl := range f.manager.glyphsCache {
+		index, _ := sfntFont.GlyphIndex(buf, r)
+
+		gl.index = index
+	}
+
+	f.subsetData = fontTable
+}
+
+func (mgr *fontManager) addGlyph(r rune, index sfnt.GlyphIndex, advance fixed.Int26_6) {
+	mgr.mu.Lock()
+	defer mgr.mu.Unlock()
+
+	mgr.glyphsCache[r] = &glyph{
 		rune:    uint16(r),
-		index:   uint16(index),
-		advance: sc.scale(adv.Round()),
-	})
-
-	f.glyphMap[r] = struct{}{}
+		index:   index,
+		advance: advance,
+	}
 }
 
-func (f *font) glyphAdvances() []glyph {
-	slices.SortFunc(f.glyphs, func(a, b glyph) int {
-		return cmp.Compare(a.index, b.index)
-	})
-
-	return f.glyphs
-}
 func (core *Core) getFont(alias string) *font {
 	return core.fonts[alias]
 }
 
 func (core *Core) fontRegular() *font {
-	return core.fonts["R"]
+	return core.fonts[FontRegular]
 }
 
 func (core *Core) fontBold() *font {
-	return core.fonts["B"]
+	return core.fonts[FontBold]
 }
-
-//9 0 obj
-//<< /Length 432 >>
-//stream
-///CIDInit /ProcSet findresource begin
-//12 dict begin
-//begincmap
-///CIDSystemInfo << /Registry (Adobe) /Ordering (UCS) /Supplement 0 >> def
-///CMapName /Adobe-Identity-UCS def
-///CMapType 2 def
-//1 begincodespacerange
-//<0000> <FFFF>
-//endcodespacerange
-//1 beginbfchar
-//<01CE> <0434>  % Глиф 01CE это русская 'д' (U+0434)
-//<01D8> <043E>  % Глиф 01D8 это русская 'о' (U+043E)
-//endbfchar
-//endcmap
-//CMapName currentdict /CMap defineresource pop
-//end
-//end
-//endstream
-//endobj

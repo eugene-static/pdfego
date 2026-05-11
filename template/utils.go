@@ -2,7 +2,6 @@ package template
 
 import (
 	"bytes"
-	"math"
 	"strconv"
 	"strings"
 )
@@ -83,6 +82,8 @@ func splitSegment(f *font, text string, size int, width float64) []string {
 	for _, word := range words[1:] {
 		candidate := line + " " + word
 
+		//TODO: хранить text_width, чтобы не считать заново при позиционировании
+
 		candidateWidth := f.measureText(size, candidate)
 		if candidateWidth > width {
 			lines = append(lines, line)
@@ -98,20 +99,6 @@ func splitSegment(f *font, text string, size int, width float64) []string {
 	lines = append(lines, line)
 
 	return lines
-}
-
-type scaler struct {
-	unitsPerEm float64
-}
-
-func newScaler(unitsPerEm int) *scaler {
-	return &scaler{unitsPerEm: float64(unitsPerEm)}
-}
-
-func (s *scaler) scale(v int) int {
-	k := 1000.0 / float64(s.unitsPerEm)
-
-	return int(math.Round(float64(v) * k))
 }
 
 // Возвращает миллиметры в пунктах

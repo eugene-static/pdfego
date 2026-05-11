@@ -3,8 +3,8 @@ package template
 import "time"
 
 const (
-	pages     = 1
-	resources = 2
+	pagesObjNum     = 1
+	resourcesObjNum = 2
 )
 
 func (core *Core) fillBuffer() {
@@ -39,9 +39,9 @@ func (core *Core) writeResources() {
 
 	b := core.mainBuffer
 
-	core.setOffset(resources)
+	core.setObject(resourcesObjNum)
 
-	b.startObj(resources)
+	b.startObj(resourcesObjNum)
 	b.openObjectParameters()
 	b.printFieldString("/Font", "")
 	b.openObjectParameters()
@@ -59,11 +59,51 @@ func (core *Core) writeFont(f *font) int64 {
 	b := core.mainBuffer
 	alias := "/" + f.alias
 
+	cMapB := newBuffer()
+
+	if core.compress {
+		f.subset()
+	}
+
+	glyphs := f.glyphs()
+
+	// /CIDInit /ProcSet findresource begin 12 dict begin begincmap /CIDSystemInfo << /Registry (Adobe) /Ordering (UCS) /Supplement 0 >> def /CMapName /Adobe-Identity-UCS def /CMapType 2 def
+	// 1 begincodespacerange <0000> <FFFF> endcodespacerange
+	// 2 beginbfchar
+	// <01CE> <0434>
+	// <01D8> <043E>
+	// endbfchar endcmap /CMapName currentdict /CMap defineresource pop end end
+	cMapB.printFieldString("/CIDInit", "/ProcSet findresource begin")
+	cMapB.printFieldString("12", "dict begin")
+	cMapB.print("begincmap\n")
+	cMapB.printFieldString("/CIDSystemInfo", "<< /Registry (Adobe) /Ordering (UCS) /Supplement 0 >> def")
+	cMapB.printFieldString("/CMapName", "/Adobe-Identity-UCS def")
+	cMapB.printFieldString("/CMapType", "2 def")
+	cMapB.print("1 begincodespacerange\n")
+	cMapB.print("<0000>", "<FFFF>\n")
+	cMapB.print("endcodespacerange\n")
+	cMapB.printGlyphCharDictionary(glyphs)
+	cMapB.print("endcmap\n")
+	cMapB.printFieldString("/CMapName", "currentdict")
+	cMapB.printFieldString("/CMap", "defineresource pop")
+	cMapB.print("end\nend")
+
+	// ---------- (CMap) ----------
+	// "8 0 obj << /Length %length >> stream ... endstream endobj\n"
+	cMapOnjNum := core.newObject()
+
+	b.startObj(cMapOnjNum)
+	b.openObjectParameters()
+	b.printFieldInt("/Length", cMapB.content.Len())
+	b.closeObjectParameters()
+	b.startStream()
+	b.writeFrom(cMapB.content)
+	b.endStream()
+	b.endObj()
+
 	// ---------- (Type0) ----------
 	// "9 0 obj<< /Type /Font /Subtype /Type0 /BaseFont /%font_name /Encoding /Identity-H /DescendantFonts [10 0 R] >>endobj\n"
-	fontNum := core.getObjNum()
-
-	core.appendOffset()
+	fontNum := core.newObject()
 
 	b.startObj(fontNum)
 	b.openObjectParameters()
@@ -72,14 +112,13 @@ func (core *Core) writeFont(f *font) int64 {
 	b.printFieldString("/BaseFont", alias)
 	b.printFieldString("/Encoding", "/Identity-H")
 	b.printRefArray("/DescendantFonts", []int64{fontNum + 1})
+	//b.printRef("/ToUnicode", cMapOnjNum)
 	b.closeObjectParameters()
 	b.endObj()
 
 	// ---------- (CIDFontType2) ----------
 	// "10 0 obj<< /Type /Font /Subtype /CIDFontType2 /BaseFont /%font_name /CIDSystemInfo<< /Registry(Adobe) /Ordering(Identity) /Supplement 0 >> /FontDescriptor 11 0 R /DW 1000 >>endobj\n"
-	objNum := core.getObjNum()
-
-	core.appendOffset()
+	objNum := core.newObject()
 
 	b.startObj(objNum)
 	b.openObjectParameters()
@@ -89,45 +128,41 @@ func (core *Core) writeFont(f *font) int64 {
 	b.printFieldString("/CIDSystemInfo", "<< /Registry(Adobe) /Ordering(Identity) /Supplement 0 >>")
 	b.printRef("/FontDescriptor", objNum+1)
 	b.printFieldInt("/DW", 600)
-	b.printGlyphWidthTable(f.glyphAdvances())
+	b.printGlyphWidthTable(glyphs)
 	b.closeObjectParameters()
 	b.endObj()
 
 	// ---------- (FontDescriptor) ----------
 	// "11 0 obj<< /Type /FontDescriptor /FontName /%font_name /Flags 4 /FontBBox[-50 -200 800 800] /ItalicAngle 0 /Ascent 800 /Descent -200 /CapHeight 700 /StemV 80 /FontFile2 12 0 R >>endobj\n"
-	objNum = core.getObjNum()
-
-	core.appendOffset()
+	objNum = core.newObject()
 
 	b.startObj(objNum)
 	b.openObjectParameters()
 	b.printFieldString("/Type", "/FontDescriptor")
 	b.printFieldString("/FontName", alias)
 	b.printFieldInt("/Flags", 4)
-	b.printFieldIntArray("/FontBBox", f.fontBBox)
+	b.printFieldIntArray("/FontBBox", f.metrics.fontBBox)
 	b.printFieldInt("/ItalicAngle", 0) //TODO: Italic Font
-	b.printFieldInt("/Ascent", f.ascent)
-	b.printFieldInt("/Descent", f.descent)
-	b.printFieldInt("/CapHeight", f.capHeight)
-	b.printFieldInt("/StemV", f.stemV)
+	b.printFieldInt("/Ascent", f.metrics.ascent)
+	b.printFieldInt("/Descent", f.metrics.descent)
+	b.printFieldInt("/CapHeight", f.metrics.capHeight)
+	b.printFieldInt("/StemV", f.metrics.stemV)
 	b.printRef("/FontFile2", objNum+1)
 	b.closeObjectParameters()
 	b.endObj()
 
 	// ---------- (FontFile2) ----------
 	// "12 0 obj<< /Length %font_bytes_length /Length1 %font_bytes_length >>stream\nfont_bytes\nendstream\nendobj\n"
-	objNum = core.getObjNum()
-
-	core.appendOffset()
+	objNum = core.newObject()
 
 	b.startObj(objNum)
 	b.openObjectParameters()
-	b.printFieldString("/Filter", "/FlateDecode")
-	b.printFieldInt("/Length", f.compressedData.Len())
-	b.printFieldInt("/Length1", f.uncompressedLen)
+	//b.printFieldString("/Filter", "/FlateDecode")
+	b.printFieldInt("/Length", len(f.subsetData))
+	//b.printFieldInt("/Length1", f.uncompressedLen)
 	b.closeObjectParameters()
 	b.startStream()
-	b.writeFrom(f.compressedData)
+	b.write(f.subsetData)
 	b.endStream()
 	b.endObj()
 
@@ -145,9 +180,9 @@ func (core *Core) writePages() {
 
 	b := core.mainBuffer
 
-	core.setOffset(pages)
+	core.setObject(pagesObjNum)
 
-	b.startObj(pages)
+	b.startObj(pagesObjNum)
 	b.openObjectParameters()
 	b.printFieldString("/Type", "/Pages")
 	b.printRefArray("/Kids", pageObjs)
@@ -159,22 +194,18 @@ func (core *Core) writePages() {
 
 func (core *Core) writePage(buf *buffer) int64 {
 	b := core.mainBuffer
-	pageObj := core.getObjNum()
+	pageObjNum := core.newObject()
 
-	core.appendOffset()
-
-	b.startObj(pageObj)
+	b.startObj(pageObjNum)
 	b.openObjectParameters()
 	b.printFieldString("/Type", "/Page")
 	b.printRef("/Parent", 1)
 	b.printRef("/Resources", 2)
-	b.printRef("/Contents", pageObj+1)
+	b.printRef("/Contents", pageObjNum+1)
 	b.closeObjectParameters()
 	b.endObj()
 
-	objNum := core.getObjNum()
-
-	core.appendOffset()
+	objNum := core.newObject()
 
 	b.startObj(objNum)
 	b.openObjectParameters()
@@ -185,7 +216,7 @@ func (core *Core) writePage(buf *buffer) int64 {
 	b.endStream()
 	b.endObj()
 
-	return pageObj
+	return pageObjNum
 }
 
 func (core *Core) writeFileHeader() {
@@ -197,9 +228,7 @@ func (core *Core) writeInfo() int64 {
 	creationDate := time.Now().Format("D:20060102150405-07'00'")
 
 	b := core.mainBuffer
-	objNum := core.getObjNum()
-
-	core.appendOffset()
+	objNum := core.newObject()
 
 	b.startObj(objNum)
 	b.openObjectParameters()
@@ -213,14 +242,12 @@ func (core *Core) writeInfo() int64 {
 
 func (core *Core) writeCatalog() int64 {
 	b := core.mainBuffer
-	objNum := core.getObjNum()
-
-	core.appendOffset()
+	objNum := core.newObject()
 
 	b.startObj(objNum)
 	b.openObjectParameters()
 	b.printFieldString("/Type", "/Catalog")
-	b.printRef("/Pages", pages)
+	b.printRef("/Pages", pagesObjNum)
 	b.closeObjectParameters()
 	b.endObj()
 

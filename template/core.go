@@ -22,6 +22,7 @@ type Core struct {
 	fonts       map[string]*font
 	fontSize    int
 	fontHeight  float64
+	compress    bool
 	pagesCount  int64
 	offsets     []int
 }
@@ -67,6 +68,10 @@ func (core *Core) SetLogger(log *slog.Logger) {
 	core.log = log
 }
 
+func (core *Core) Compress() {
+	core.compress = true
+}
+
 func (core *Core) x() float64 {
 	return core.cursor.x
 }
@@ -104,20 +109,20 @@ func (core *Core) setXY(x, y float64) {
 	core.setY(y)
 }
 
-func (core *Core) appendOffset() {
+func (core *Core) newObject() int64 {
+	objNum := int64(len(core.offsets))
+
 	xLen := core.mainBuffer.content.Len()
 
 	core.offsets = append(core.offsets, xLen)
+
+	return objNum
 }
 
-func (core *Core) setOffset(offset int) {
+func (core *Core) setObject(objNum int) {
 	xLen := core.mainBuffer.content.Len()
 
-	core.offsets[offset] = xLen
-}
-
-func (core *Core) getObjNum() int64 {
-	return int64(len(core.offsets))
+	core.offsets[objNum] = xLen
 }
 
 func (core *Core) ptX(x float64) float64 {

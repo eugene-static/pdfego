@@ -128,7 +128,7 @@ func (c *cell) textDx(text string) (dx float64) {
 
 		c.core.log.Debug("width", slog.String("text", text), slog.Float64("mm", textWidth))
 
-		dx = c.width - textWidth
+		dx = c.width - textWidth - 0.2
 	case strings.ContainsRune(c.align, 'C'):
 		textWidth := f.measureText(c.fontSize, text)
 

@@ -2,6 +2,7 @@ package template
 
 import (
 	"bytes"
+	"slices"
 
 	"golang.org/x/image/font/sfnt"
 )
@@ -25,6 +26,11 @@ func (b *buffer) writeFrom(buf *bytes.Buffer) {
 	b.ln()
 }
 
+func (b *buffer) write(data []byte) {
+	b.content.Write(data)
+	b.ln()
+}
+
 func (b *buffer) print(s ...string) {
 	for i := range s {
 		b.content.WriteString(s[i])
@@ -35,14 +41,10 @@ func (b *buffer) printText(font *font, text string) {
 	b.content.WriteByte('<')
 	defer b.content.WriteByte('>')
 
-	var buf sfnt.Buffer
-
 	for _, r := range text {
-		idx, _ := font.face.GlyphIndex(&buf, r) //err is always nil
+		gl := font.glyph(r)
 
-		font.saveIndex(&buf, r, idx)
-
-		writeUint16D4(b.content, uint16(idx))
+		writeUint16D4(b.content, uint16(gl.index))
 	}
 }
 
@@ -74,11 +76,11 @@ func (b *buffer) printFont(alias string, fontSize int) {
 }
 
 // /W [1 [100] 3 [95 83 99]]
-func (b *buffer) printGlyphWidthTable(glyphAdvances []glyph) {
+func (b *buffer) printGlyphWidthTable(glyphs []*glyph) {
 	b.print("/W [")
 
-	prev := uint16(0)
-	for _, gl := range glyphAdvances {
+	prev := sfnt.GlyphIndex(0)
+	for _, gl := range glyphs {
 		if gl.index == prev+1 {
 			b.print(" ")
 			b.printInt64(int64(gl.advance))
@@ -90,7 +92,7 @@ func (b *buffer) printGlyphWidthTable(glyphAdvances []glyph) {
 			b.print("] ")
 		}
 
-		b.printUint16(gl.index)
+		b.printUint16(uint16(gl.index))
 		b.print(" [")
 		b.printInt64(int64(gl.advance))
 
@@ -98,6 +100,23 @@ func (b *buffer) printGlyphWidthTable(glyphAdvances []glyph) {
 	}
 
 	b.print("]]\n")
+}
+
+func (b *buffer) printGlyphCharDictionary(glyphs []*glyph) {
+	for chunk := range slices.Chunk(glyphs, 100) {
+		b.printInt64(int64(len(chunk)))
+		b.print(" beginbfchar\n")
+
+		for _, gl := range chunk {
+			b.print("<")
+			writeUint16D4(b.content, uint16(gl.index))
+			b.print("> <")
+			writeUint16D4(b.content, gl.rune)
+			b.print(">\n")
+		}
+
+		b.print("endbfchar\n")
+	}
 }
 
 // 0 0
@@ -115,7 +134,7 @@ func (b *buffer) startObj(objNum int64) {
 
 // endobj
 func (b *buffer) endObj() {
-	b.content.WriteString("endobj\n")
+	b.content.WriteString("endobj\n\n")
 }
 
 // <<
