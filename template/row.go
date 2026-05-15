@@ -1,15 +1,20 @@
 package template
 
-import "strings"
+import (
+	"strings"
+
+	core "github.com/eugene-static/pdf-craft/core"
+	"github.com/eugene-static/pdf-craft/meter"
+)
 
 type Row struct {
-	core        *Core
-	x           float64
-	y           float64
-	height      float64
+	core        *core.Core
+	x           meter.MM
+	y           meter.MM
+	height      meter.MM
 	cells       []cell
 	rowspans    []int
-	columns     []float64
+	columns     []meter.MM
 	columnIndex int
 	columnsLen  int
 }
@@ -40,10 +45,10 @@ func (r *Row) newCell(text string, opts CellOpts) cell {
 	c := cell{
 		core:       r.core,
 		text:       []string{text},
-		font:       FontRegular,
-		fontSize:   r.core.fontSize,
+		font:       core.FontRegular,
+		fontSize:   r.core.DefaultFontSize(),
 		border:     "",
-		borderSize: 0,
+		borderSize: r.core.BorderThin(),
 		align:      "CM",
 		colspan:    1,
 		rowspan:    1,
@@ -59,7 +64,7 @@ func (r *Row) newCell(text string, opts CellOpts) cell {
 	}
 
 	if opts.FontSize > 0 {
-		c.fontSize = opts.FontSize
+		c.fontSize = meter.PT(opts.FontSize)
 	}
 
 	if opts.Border != "" {
@@ -67,7 +72,7 @@ func (r *Row) newCell(text string, opts CellOpts) cell {
 	}
 
 	if opts.BorderSize > 0 {
-		c.borderSize = opts.BorderSize
+		c.borderSize = meter.PT(opts.BorderSize)
 	}
 
 	if opts.Align != "" {
@@ -84,28 +89,26 @@ func (r *Row) newCell(text string, opts CellOpts) cell {
 
 	c.width = r.cellWidth(c.colspan)
 
-	height := c.core.fontHeight
+	f := c.core.Font(c.font)
 
-	f := c.core.getFont(c.font)
-
-	f.saveRunes(text)
+	f.SaveRunes(text)
 
 	if opts.Wrap {
-		split := splitText(f, text, c.fontSize, c.width)
-
-		height *= float64(len(split))
+		split := f.SplitText(text, c.fontSize, c.width)
 
 		c.text = split
 	}
 
-	r.setHeight(opts.Height, height)
+	height := meter.FontHeight(c.fontSize) * meter.MM(len(c.text))
+
+	r.setHeight(meter.MM(opts.Height), height)
 
 	return c
 }
 
 // Поле cell.height должно быть равно высоте строки, но пока все ячейки не будут созданы, мы не знаем итоговую высоту строки.
 // Поэтому высота ячейки будет определяться в методе render().
-func (r *Row) setHeight(heights ...float64) {
+func (r *Row) setHeight(heights ...meter.MM) {
 	for _, h := range heights {
 		if h > r.height {
 			r.height = h
@@ -114,7 +117,7 @@ func (r *Row) setHeight(heights ...float64) {
 }
 
 // Ширина ячейки равна сумме ширин всех колонок, которые она занимает.
-func (r *Row) cellWidth(colspan int) (w float64) {
+func (r *Row) cellWidth(colspan int) (w meter.MM) {
 	for i := r.columnIndex; i < min(r.columnsLen, r.columnIndex+colspan); i++ {
 		w += r.columns[i]
 	}

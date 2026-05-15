@@ -1,4 +1,4 @@
-module dev_excelize
+module github.com/eugene-static/pdf-craft
 
 go 1.26.3
 

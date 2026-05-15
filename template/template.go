@@ -1,8 +1,11 @@
 package template
 
 import (
-	"bytes"
 	"slices"
+
+	"github.com/eugene-static/pdf-craft/buffer"
+	core "github.com/eugene-static/pdf-craft/core"
+	"github.com/eugene-static/pdf-craft/meter"
 )
 
 const (
@@ -12,190 +15,192 @@ const (
 )
 
 type Template struct {
-	core   *Core
-	frames []*Frame
+	core   *core.Core
+	blocks []*Block
 }
 
-type Frame struct {
-	core    *Core
-	fields  []*Field
+type Block struct {
+	core    *core.Core
+	slots   []*Slot
 	profile byte
 }
 
-type Field struct {
-	core      *Core
+type Slot struct {
+	core      *core.Core
 	renderers []renderer
 }
 
 type Table struct {
-	core    *Core
-	columns []float64
+	core    *core.Core
+	columns []meter.MM
 	rows    []*Row
 }
 
 type renderer interface {
-	render(b *buffer, x, y float64)
-	height() float64
-	width() float64
+	render(b *buffer.Buffer, x, y meter.MM)
+	height() meter.MM
+	width() meter.MM
 }
 
-func (t *Template) Frame() *Frame {
-	frame := t.frame(defaultFrame)
+func (t *Template) Block() *Block {
+	block := t.block(defaultFrame)
 
-	return frame
+	return block
 }
 
-func (t *Template) Header() *Frame {
-	frame := t.frame(headerFrame)
+func (t *Template) Header() *Block {
+	block := t.block(headerFrame)
 
-	return frame
+	return block
 }
 
-func (t *Template) EndHeader() *Frame {
-	frame := t.frame(headerStopFrame)
+func (t *Template) EndHeader() *Block {
+	block := t.block(headerStopFrame)
 
-	return frame
+	return block
 }
 
-func (t *Template) frame(profile byte) *Frame {
-	frame := Frame{
+func (t *Template) block(profile byte) *Block {
+	block := Block{
 		core:    t.core,
 		profile: profile,
 	}
 
-	t.frames = append(t.frames, &frame)
+	t.blocks = append(t.blocks, &block)
 
-	return &frame
+	return &block
 }
 
 func (t *Template) Render() {
-	buf := t.core.addPage()
+	buf, page := t.core.AddPage()
+	x, y := page.X0Y0()
 
-	for i := range t.frames {
-		headerHeight := 0.0
+	for _, block := range t.blocks {
+		headerHeight := meter.MM(0)
+		height := block.height()
 
-		if t.frames[i].profile == headerFrame {
-			x, y := t.core.x0y0()
+		switch block.profile {
+		case headerFrame:
+			headerBuf := t.core.AddHeader()
 
-			t.frames[i].render(t.core.headBuffer, x, y)
+			x0, y0 := page.X0Y0()
 
-			headerHeight = t.frames[i].height()
-		}
+			block.render(headerBuf, x0, y0)
 
-		if t.frames[i].profile == headerStopFrame {
-			t.core.headBuffer.reset()
+			headerHeight = height
+		case headerStopFrame:
+			t.core.RemoveHeader()
 
 			headerHeight = 0
+		default:
+			//
 		}
 
-		x, y := t.core.xy()
-		height := t.frames[i].height()
+		if page.IsBelowBottomBorder(y + height) {
+			buf, page = t.core.AddPage()
 
-		if pt(y+height) > t.core.page.height {
-			buf = t.core.addPage()
-
-			x, y = t.core.xy()
+			x, y = page.X0Y0()
 			y += headerHeight
 		}
 
-		t.frames[i].render(buf, x, y)
+		block.render(buf, x, y)
 
-		t.core.setXY(x, y+height)
+		y += height
 	}
 
-	t.core.fillBuffer()
+	t.core.FillBuffer()
 }
 
-func (t *Template) Buffer() *bytes.Buffer {
-	return t.core.mainBuffer.content
-}
+//func (t *Template) Bytes() []byte {
+//	return t.core.mainBuffer.Bytes()
+//}
 
-func (f *Frame) Field() *Field {
-	field := Field{
-		core: f.core,
+func (b *Block) Slot() *Slot {
+	slot := Slot{
+		core: b.core,
 	}
 
-	f.fields = append(f.fields, &field)
+	b.slots = append(b.slots, &slot)
 
-	return &field
+	return &slot
 }
 
-func (f *Frame) render(buf *buffer, x, y float64) {
-	for i := range f.fields {
-		f.fields[i].render(buf, x, y)
+func (b *Block) render(buf *buffer.Buffer, x, y meter.MM) {
+	for i := range b.slots {
+		b.slots[i].render(buf, x, y)
 
-		x += f.fields[i].width()
+		x += b.slots[i].width()
 	}
 }
 
-func (f *Frame) height() float64 {
-	heights := make([]float64, 0, len(f.fields))
+func (b *Block) height() meter.MM {
+	heights := make([]meter.MM, 0, len(b.slots))
 
-	for i := range f.fields {
-		heights = append(heights, f.fields[i].height())
+	for i := range b.slots {
+		heights = append(heights, b.slots[i].height())
 	}
 
 	return slices.Max(heights)
 }
 
-func (f *Frame) width() float64 {
-	width := 0.0
+func (b *Block) width() meter.MM {
+	width := meter.MM(0.0)
 
-	for i := range f.fields {
-		width += f.fields[i].width()
+	for i := range b.slots {
+		width += b.slots[i].width()
 	}
 
 	return width
 }
 
-func (f *Field) Frame() *Frame {
-	frame := Frame{
-		core: f.core,
+func (s *Slot) Frame() *Block {
+	block := Block{
+		core: s.core,
 	}
 
-	f.renderers = append(f.renderers, &frame)
+	s.renderers = append(s.renderers, &block)
 
-	return &frame
+	return &block
 }
 
-func (f *Field) Table(column float64, columns ...float64) *Table {
-	cols := make([]float64, len(columns)+1)
+func (s *Slot) Table(column meter.MM, columns ...meter.MM) *Table {
+	cols := make([]meter.MM, len(columns)+1)
 	cols[0] = column
 	copy(cols[1:], columns)
 
 	table := Table{
-		core:    f.core,
+		core:    s.core,
 		columns: cols,
 	}
 
-	f.renderers = append(f.renderers, &table)
+	s.renderers = append(s.renderers, &table)
 
 	return &table
 }
 
-func (f *Field) render(buf *buffer, x, y float64) {
-	for i := range f.renderers {
-		f.renderers[i].render(buf, x, y)
+func (s *Slot) render(buf *buffer.Buffer, x, y meter.MM) {
+	for i := range s.renderers {
+		s.renderers[i].render(buf, x, y)
 
-		y += f.renderers[i].height()
+		y += s.renderers[i].height()
 	}
 }
 
-func (f *Field) height() float64 {
-	height := 0.0
+func (s *Slot) height() meter.MM {
+	height := meter.MM(0.0)
 
-	for i := range f.renderers {
-		height += f.renderers[i].height()
+	for i := range s.renderers {
+		height += s.renderers[i].height()
 	}
 
 	return height
 }
 
-func (f *Field) width() float64 {
-	width := 0.0
+func (s *Slot) width() meter.MM {
+	width := meter.MM(0.0)
 
-	for i := range f.renderers {
-		width += f.renderers[i].width()
+	for i := range s.renderers {
+		width += s.renderers[i].width()
 	}
 
 	return width
@@ -222,7 +227,7 @@ func (t *Table) newRow() *Row {
 
 	r := &Row{
 		core:       t.core,
-		height:     t.core.fontHeight,
+		height:     meter.FontHeight(t.core.DefaultFontSize()),
 		columns:    t.columns,
 		columnsLen: columnsLen,
 		cells:      cells,
@@ -232,12 +237,13 @@ func (t *Table) newRow() *Row {
 	return r
 }
 
-func (t *Table) render(buf *buffer, x, y float64) {
-	height := 0.0
+func (t *Table) render(buf *buffer.Buffer, x, y meter.MM) {
+	height := meter.MM(0.0)
 
 	for rowIndex, row := range t.rows {
 		row.x = x
 		row.y = y + height
+		height += row.height
 
 		cellX := row.x
 
@@ -251,14 +257,13 @@ func (t *Table) render(buf *buffer, x, y float64) {
 			}
 
 			c.height = t.cellHeight(rowIndex, c.rowspan)
-			height += row.height
 
 			c.render(buf)
 		}
 	}
 }
 
-func (t *Table) height() (h float64) {
+func (t *Table) height() (h meter.MM) {
 	for i := range t.rows {
 		h += t.rows[i].height
 	}
@@ -266,7 +271,7 @@ func (t *Table) height() (h float64) {
 	return h
 }
 
-func (t *Table) width() (w float64) {
+func (t *Table) width() (w meter.MM) {
 	for i := range t.columns {
 		w += t.columns[i]
 	}
@@ -274,7 +279,7 @@ func (t *Table) width() (w float64) {
 	return w
 }
 
-func (t *Table) cellHeight(rowIndex, rowspan int) (h float64) {
+func (t *Table) cellHeight(rowIndex, rowspan int) (h meter.MM) {
 	for i := rowIndex; i < min(len(t.rows), rowIndex+rowspan); i++ {
 		h += t.rows[i].height
 	}

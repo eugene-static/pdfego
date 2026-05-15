@@ -1,22 +1,11 @@
 package main
 
 import (
-	"bytes"
-	"fmt"
+	"github.com/eugene-static/pdf-craft/core"
 )
 
-func (upd HTML) FillTemplate() ([]byte, error) {
-	tmpl := New(upd)
-
-	output := bytes.NewBuffer(nil)
-	err := tmpl.document.Output(output)
-	if err != nil {
-		fmt.Println(err)
-
-		return nil, err
-	}
-
-	tmpl.document.Close()
+func (upd UPD) FillTemplate() ([]byte, error) {
+	tmpl := core.New(core.Landscape)
 
 	return output.Bytes(), nil
 }

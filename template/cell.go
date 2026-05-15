@@ -1,23 +1,27 @@
 package template
 
 import (
-	"log/slog"
 	"strings"
 	"unicode"
+
+	"github.com/eugene-static/pdf-craft/buffer"
+	"github.com/eugene-static/pdf-craft/core"
+	"github.com/eugene-static/pdf-craft/font"
+	"github.com/eugene-static/pdf-craft/meter"
 )
 
 type cell struct {
-	core       *Core
-	x          float64
-	y          float64
-	width      float64
-	height     float64
+	core       *core.Core
+	x          meter.MM
+	y          meter.MM
+	width      meter.MM
+	height     meter.MM
 	colspan    int
 	rowspan    int
 	font       string
-	fontSize   int
+	fontSize   meter.PT
 	border     string
-	borderSize float64
+	borderSize meter.PT
 	align      string
 	text       []string
 	busy       bool
@@ -36,56 +40,46 @@ type CellOpts struct {
 }
 
 // BT /[FontAlias] [FontSize] Tf 1 0 0 1 [X] [Y] Tm <[TextHex]> Tj ET
-func (c *cell) render(buf *buffer) {
+func (c *cell) render(buf *buffer.Buffer) {
 	if len(c.text) == 0 {
 		return
 	}
 
-	f := c.core.getFont(c.font)
+	f := c.core.Font(c.font)
 
-	buf.print("BT\n")
-	buf.printFont(c.font, c.fontSize)
+	buf.WriteStringLn("BT")
+	buf.WriteFont(c.font, c.fontSize)
 
 	for i, line := range c.text {
-		dx := c.textDx(line)
+		dx := c.textDx(f, line)
 		dy := c.textDy(i)
 
-		x, y := c.core.ptXY(c.x+dx, c.y+dy)
+		x := c.x + dx
+		y := c.y + dy
 
-		// "1 0 0 1 x y Tm" задает абсолютную позицию текста на странице.
-		buf.print("1 0 0 1 ")
-		buf.printXY(x, y)
-		buf.print(" Tm ")
-		buf.printText(f, line)
-		buf.print(" Tj\n")
+		buf.WriteText(f, x, y, line)
 	}
 
-	buf.print("ET\n")
+	buf.WriteStringLn("ET")
 
 	if c.border != "" {
-		c.drawBorder(buf)
+		c.renderBorder(buf)
 	}
 }
 
-func (c *cell) drawBorder(buf *buffer) {
-	for _, b := range c.border {
-		bs := c.borderSize
+func (c *cell) renderBorder(buf *buffer.Buffer) {
+	bs := c.borderSize
 
-		if c.borderSize == 0 {
-			bs = c.core.border.thin
-			if unicode.IsUpper(b) {
-				bs = c.core.border.thick
-			}
+	for _, b := range c.border {
+		if unicode.IsUpper(b) {
+			bs = c.core.BorderThick()
 		}
 
-		var x0, y0, x1, y1 float64
+		var x0, y0, x1, y1 meter.MM
 
 		switch b {
 		case 'o', 'O':
-			x, y := c.core.ptXY(c.x, c.y)
-			w, h := pt(c.width), pt(c.height)
-
-			buf.printRect(bs, x, y, w, h)
+			buf.WriteRect(bs, c.x, c.y, c.width, c.height)
 
 			return
 		case 't', 'T':
@@ -112,29 +106,20 @@ func (c *cell) drawBorder(buf *buffer) {
 			continue
 		}
 
-		x0, y0 = c.core.ptXY(x0, y0)
-		x1, y1 = c.core.ptXY(x1, y1)
-
-		buf.printLine(bs, x0, y0, x1, y1)
+		buf.WriteLine(bs, x0, y0, x1, y1)
 	}
 }
 
-func (c *cell) textDx(text string) (dx float64) {
-	f := c.core.getFont(c.font)
-
+func (c *cell) textDx(f *font.Font, text string) (dx meter.MM) {
 	switch {
 	case strings.ContainsRune(c.align, 'R'):
-		textWidth := f.measureText(c.fontSize, text)
+		textWidth := f.MeasureText(c.fontSize, text)
 
-		c.core.log.Debug("width", slog.String("text", text), slog.Float64("mm", textWidth))
-
-		dx = c.width - textWidth - 0.2
+		dx = c.width - textWidth.MM() - 0.2
 	case strings.ContainsRune(c.align, 'C'):
-		textWidth := f.measureText(c.fontSize, text)
+		textWidth := f.MeasureText(c.fontSize, text)
 
-		c.core.log.Debug("width", slog.String("text", text), slog.Float64("mm", textWidth))
-
-		dx = (c.width - textWidth) / 2
+		dx = (c.width - textWidth.MM()) / 2
 	default:
 		// чтобы текст не прилипал к границе
 		dx = 0.2
@@ -143,22 +128,25 @@ func (c *cell) textDx(text string) (dx float64) {
 	return dx
 }
 
-func (c *cell) textDy(index int) (dy float64) {
-	lenLines := len(c.text)
+func (c *cell) textDy(index int) (dy meter.MM) {
+	lenLines := meter.MM(len(c.text))
+	fontHeight := meter.FontHeight(c.fontSize)
+
+	k := meter.MM(0.1)
 
 	switch {
 	case strings.ContainsRune(c.align, 'B'):
-		dy = c.height - float64(lenLines)*c.core.fontHeight
+		dy = c.height - lenLines*fontHeight - k
 	case strings.ContainsRune(c.align, 'M'):
-		dy = (c.height - float64(lenLines)*c.core.fontHeight) / 2
+		dy = (c.height - lenLines*fontHeight) / 2
 	default:
-		dy = 0.1
+		dy = k
 	}
 
 	// index + 1 необходим для того, чтобы выставить Y-координату по верхнему краю шрифта.
 	// PDF считает Y от нижней границы страницы, а здесь все координаты указаны от верхней. К тому же позиционирует шрифт по baseline.
 	// Поэтому для верного позиционирования шрифта нам необходимо добавить еще одну высоту строки.
-	dy += float64(index+1) * c.core.fontHeight
+	dy += meter.MM(index+1) * fontHeight
 
 	return dy
 }
