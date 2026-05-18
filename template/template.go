@@ -9,9 +9,9 @@ import (
 )
 
 const (
-	defaultFrame = iota
-	headerFrame
-	headerStopFrame
+	defaultBlock = iota
+	headerBlock
+	headerStopBlock
 )
 
 type Template struct {
@@ -42,20 +42,26 @@ type renderer interface {
 	width() meter.MM
 }
 
+func New(core *core.Core) *Template {
+	return &Template{
+		core: core,
+	}
+}
+
 func (t *Template) Block() *Block {
-	block := t.block(defaultFrame)
+	block := t.block(defaultBlock)
 
 	return block
 }
 
 func (t *Template) Header() *Block {
-	block := t.block(headerFrame)
+	block := t.block(headerBlock)
 
 	return block
 }
 
 func (t *Template) EndHeader() *Block {
-	block := t.block(headerStopFrame)
+	block := t.block(headerStopBlock)
 
 	return block
 }
@@ -72,23 +78,23 @@ func (t *Template) block(profile byte) *Block {
 }
 
 func (t *Template) Render() {
-	buf, page := t.core.AddPage()
-	x, y := page.X0Y0()
+	buf := t.core.AddPage()
+	page := t.core.Page()
+	x0, y0 := page.X0Y0()
+	x, y := x0, y0
 
 	for _, block := range t.blocks {
 		headerHeight := meter.MM(0)
 		height := block.height()
 
 		switch block.profile {
-		case headerFrame:
+		case headerBlock:
 			headerBuf := t.core.AddHeader()
-
-			x0, y0 := page.X0Y0()
 
 			block.render(headerBuf, x0, y0)
 
 			headerHeight = height
-		case headerStopFrame:
+		case headerStopBlock:
 			t.core.RemoveHeader()
 
 			headerHeight = 0
@@ -96,11 +102,10 @@ func (t *Template) Render() {
 			//
 		}
 
-		if page.IsBelowBottomBorder(y + height) {
-			buf, page = t.core.AddPage()
-
-			x, y = page.X0Y0()
-			y += headerHeight
+		if (page.Margin() + y + height) > 0 {
+			buf = t.core.AddPage()
+			x = x0
+			y = y0 + headerHeight
 		}
 
 		block.render(buf, x, y)
@@ -111,9 +116,9 @@ func (t *Template) Render() {
 	t.core.FillBuffer()
 }
 
-//func (t *Template) Bytes() []byte {
-//	return t.core.mainBuffer.Bytes()
-//}
+func (t *Template) Bytes() []byte {
+	return t.core.Bytes()
+}
 
 func (b *Block) Slot() *Slot {
 	slot := Slot{
@@ -123,6 +128,12 @@ func (b *Block) Slot() *Slot {
 	b.slots = append(b.slots, &slot)
 
 	return &slot
+}
+
+func (b *Block) Add(blockFunc func(*Block)) *Block {
+	blockFunc(b)
+
+	return b
 }
 
 func (b *Block) render(buf *buffer.Buffer, x, y meter.MM) {
@@ -153,7 +164,7 @@ func (b *Block) width() meter.MM {
 	return width
 }
 
-func (s *Slot) Frame() *Block {
+func (s *Slot) Block() *Block {
 	block := Block{
 		core: s.core,
 	}
@@ -176,6 +187,12 @@ func (s *Slot) Table(column meter.MM, columns ...meter.MM) *Table {
 	s.renderers = append(s.renderers, &table)
 
 	return &table
+}
+
+func (s *Slot) Add(slotFunc func(s *Slot)) *Slot {
+	slotFunc(s)
+
+	return s
 }
 
 func (s *Slot) render(buf *buffer.Buffer, x, y meter.MM) {
@@ -212,6 +229,10 @@ func (t *Table) Row() *Row {
 	t.rows = append(t.rows, row)
 
 	return row
+}
+
+func (t *Table) Add(rowFunc func(t *Table)) {
+	rowFunc(t)
 }
 
 func (t *Table) newRow() *Row {

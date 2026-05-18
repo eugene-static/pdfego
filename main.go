@@ -1,37 +1,32 @@
 package main
 
 import (
-	"fmt"
+	"log"
 	"os"
 	"time"
 )
 
 func main() {
-
 	t := time.Now()
 
-	printForm, err := upd.FillTemplate()
-	if err != nil {
-		fmt.Println(err)
+	upd := NewUPD(1)
 
-		return
+	bytes, err := upd.FillTemplate()
+	if err != nil {
+		log.Fatal(err)
 	}
 
-	fmt.Printf("duration: %s", time.Since(t).String())
+	log.Printf("duration: %v\n", time.Since(t))
 
 	output, err := os.Create("output.pdf")
 	if err != nil {
-		fmt.Println(err)
-
-		return
+		log.Fatal(err)
 	}
 
 	defer output.Close()
 
-	_, err = output.Write(printForm)
+	_, err = output.Write(bytes)
 	if err != nil {
-		fmt.Println(err)
-
-		return
+		log.Fatal(err)
 	}
 }

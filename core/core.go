@@ -43,8 +43,8 @@ type border struct {
 
 func New(orientation string) *Core {
 	pg := Page{
-		width:  595.28,
-		height: 841.89,
+		width:  meter.PT(595.2).MM(),
+		height: meter.PT(841.89).MM(),
 	}
 
 	if orientation == Landscape {

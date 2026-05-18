@@ -195,7 +195,7 @@ func (core *Core) writePages() {
 	b.WriteFieldString("/Type", "/Pages")
 	b.WriteRefArray("/Kids", pageObjs)
 	b.WriteFieldInt("/Count", len(pageObjs))
-	b.WriteFieldFloatArray("/MediaBox", []float64{0, 0, core.page.width, core.page.height})
+	b.WriteFieldFloatArray("/MediaBox", []float64{0, 0, core.page.width.PT().Float64(), core.page.height.PT().Float64()})
 	b.CloseObjectParameters()
 	b.EndObj()
 }

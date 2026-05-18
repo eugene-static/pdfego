@@ -41,6 +41,26 @@ func (r *Row) Cell(text string, opts ...CellOpts) {
 	r.updateColIndex(c.colspan)
 }
 
+func (r *Row) Label(text string) {
+	r.Cell(text, CellOpts{Align: "LB"})
+}
+
+func (r *Row) FormL(text string, wrapText bool) {
+	r.Cell(text, CellOpts{Align: "LB", Border: "b", Wrap: wrapText})
+}
+
+func (r *Row) FormC(text string, wrapText bool) {
+	r.Cell(text, CellOpts{Align: "CB", Border: "b", Wrap: wrapText})
+}
+
+func (r *Row) Paragraph(text string) {
+	r.Cell(text, CellOpts{Align: "CB"})
+}
+
+func (r *Row) Underscore(text string) {
+	r.Cell(text, CellOpts{Align: "CT", FontSize: r.core.DefaultFontSize().Sub(1)})
+}
+
 func (r *Row) newCell(text string, opts CellOpts) cell {
 	c := cell{
 		core:       r.core,
@@ -64,7 +84,7 @@ func (r *Row) newCell(text string, opts CellOpts) cell {
 	}
 
 	if opts.FontSize > 0 {
-		c.fontSize = meter.PT(opts.FontSize)
+		c.fontSize = opts.FontSize
 	}
 
 	if opts.Border != "" {

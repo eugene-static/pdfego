@@ -27,6 +27,10 @@ func (pt PT) FixedI() fixed.Int26_6 {
 	return fixed.Int26_6(math.Round(pt.Float64() * 64.0))
 }
 
+func (pt PT) Sub(pt2 PT) PT {
+	return pt - pt2
+}
+
 func (mm MM) PT() PT {
 	return PT(mm * (dpi / inch))
 }
@@ -41,6 +45,12 @@ func (mm MM) Abs() (res MM) {
 	return res
 }
 
+func (mm MM) Neg() (res MM) {
+	res = -mm
+
+	return res
+}
+
 func FontHeight(fontSize PT) MM {
-	return fontSize.MM() * 1 //TODO:
+	return fontSize.MM() * 1.2 //TODO:
 }

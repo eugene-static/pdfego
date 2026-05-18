@@ -23,8 +23,14 @@ type cell struct {
 	border     string
 	borderSize meter.PT
 	align      string
-	text       []string
+	text       []segment
 	busy       bool
+}
+
+type segment struct {
+	text  string
+	width meter.MM
+	shift []int
 }
 
 type CellOpts struct {
@@ -35,7 +41,7 @@ type CellOpts struct {
 	Border     string
 	BorderSize float64
 	Font       string
-	FontSize   int
+	FontSize   meter.PT
 	Wrap       bool
 }
 
@@ -50,14 +56,14 @@ func (c *cell) render(buf *buffer.Buffer) {
 	buf.WriteStringLn("BT")
 	buf.WriteFont(c.font, c.fontSize)
 
-	for i, line := range c.text {
-		dx := c.textDx(f, line)
+	for i, seg := range c.text {
+		dx := c.textDx(f, seg.text)
 		dy := c.textDy(i)
 
 		x := c.x + dx
 		y := c.y + dy
 
-		buf.WriteText(f, x, y, line)
+		buf.WriteText(f, x, y, seg.text, seg.shift)
 	}
 
 	buf.WriteStringLn("ET")
@@ -130,9 +136,14 @@ func (c *cell) textDx(f *font.Font, text string) (dx meter.MM) {
 
 func (c *cell) textDy(index int) (dy meter.MM) {
 	lenLines := meter.MM(len(c.text))
-	fontHeight := meter.FontHeight(c.fontSize)
+	fontHeight := c.fontSize.MM()
 
-	k := meter.MM(0.1)
+	k := meter.MM(0.2)
+
+	// index + 1 необходим для того, чтобы выставить Y-координату по верхнему краю шрифта.
+	// PDF считает Y от нижней границы страницы, а здесь все координаты указаны от верхней. К тому же позиционирует шрифт по baseline.
+	// Поэтому для верного позиционирования шрифта нам необходимо добавить еще одну высоту строки.
+	baseLineDy := meter.MM(index+1) * fontHeight
 
 	switch {
 	case strings.ContainsRune(c.align, 'B'):
@@ -143,10 +154,7 @@ func (c *cell) textDy(index int) (dy meter.MM) {
 		dy = k
 	}
 
-	// index + 1 необходим для того, чтобы выставить Y-координату по верхнему краю шрифта.
-	// PDF считает Y от нижней границы страницы, а здесь все координаты указаны от верхней. К тому же позиционирует шрифт по baseline.
-	// Поэтому для верного позиционирования шрифта нам необходимо добавить еще одну высоту строки.
-	dy += meter.MM(index+1) * fontHeight
+	dy += baseLineDy
 
 	return dy
 }

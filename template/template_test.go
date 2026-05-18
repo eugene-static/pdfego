@@ -5,11 +5,11 @@ import (
 	"os"
 	"testing"
 
-	core2 "github.com/eugene-static/pdf-craft/core"
+	core "github.com/eugene-static/pdf-craft/core"
 )
 
 func TestTemplate(t *testing.T) {
-	core := core2.New(core2.Landscape)
+	core := core.New(core.Landscape)
 	core.SetLogger(slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelDebug})))
 	core.SetMargin(3)
 	core.SetDefaultFontSize(6)
@@ -29,14 +29,9 @@ func TestTemplate(t *testing.T) {
 		core: core,
 	}
 
-	HeaderFrame := tmpl.Block()
-	titleHeaderField := HeaderFrame.Slot()
-
-	titleHeader(titleHeaderField)
-
-	field2 := HeaderFrame.Slot()
-
-	numberHeader(field2)
+	headBlock := tmpl.Block()
+	headBlock.Slot().Add(titleHeader)
+	headBlock.Slot().Add(numberHeader)
 
 	tmpl.Render()
 
@@ -53,8 +48,8 @@ func TestTemplate(t *testing.T) {
 	}
 }
 
-func titleHeader(field *Slot) {
-	table := field.Table(15, 5)
+func titleHeader(slot *Slot) {
+	table := slot.Table(15, 5)
 
 	r1 := table.Row()
 	r1.Cell("Универсальный передаточный документ", CellOpts{Height: 15, Wrap: true, Colspan: 2, Align: "LT"})
@@ -66,7 +61,7 @@ func titleHeader(field *Slot) {
 }
 
 func numberHeader(field *Slot) {
-	numbersDates := field.Frame()
+	numbersDates := field.Block()
 	numbers := numbersDates.Slot()
 
 	table := numbers.Table(15, 5, 15, 5, 15, 10)

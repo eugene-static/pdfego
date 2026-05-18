@@ -49,24 +49,31 @@ func (b *Buffer) WriteStringLn(val string) {
 }
 
 // /REG 14 Tf
-func (b *Buffer) WriteFont(alias string, fontSize int) {
+func (b *Buffer) WriteFont(alias string, fontSize meter.PT) {
 	b.writeString("/", alias, " ")
-	b.writeFloat64(float64(fontSize))
+	b.writeFloat64(fontSize.Float64())
 	b.writeString(" Tf\n")
 }
 
 // "1 0 0 1 x y Tm" задает абсолютную позицию текста на странице.
-func (b *Buffer) WriteText(font *font.Font, x, y meter.MM, text string) {
+func (b *Buffer) WriteText(font *font.Font, x, y meter.MM, text string, shift []int) {
 	b.content.WriteString("1 0 0 1 ")
 	b.writeXY(x, y)
-	b.content.WriteString(" Tm <")
+	b.content.WriteString(" Tm [")
 
-	for _, r := range text {
+	for i, r := range text {
 		gid := font.GID(r)
+		b.writeString(" <")
 		b.writeUint16D4(gid)
+		b.writeString(">")
+
+		if i < len(shift) && shift[i] > 0 {
+			b.space()
+			b.writeInt64(int64(shift[i]))
+		}
 	}
 
-	b.content.WriteString("> Tj\n")
+	b.content.WriteString("] TJ\n")
 }
 
 // /W [1 [100] 3 [95 83 99]]
@@ -235,7 +242,7 @@ func (b *Buffer) WriteRect(bw meter.PT, x, y, w, h meter.MM) {
 	b.writeString(" w ")
 	b.writeXY(x, y)
 	b.space()
-	b.writeXY(w, -h)
+	b.writeWH(w, h)
 	b.writeString(" re S ")
 }
 
@@ -276,6 +283,12 @@ func (b *Buffer) writeXY(x, y meter.MM) {
 	b.writeFloat64(x.PT().Float64())
 	b.space()
 	b.writeFloat64(y.Abs().PT().Float64())
+}
+
+func (b *Buffer) writeWH(w, h meter.MM) {
+	b.writeFloat64(w.PT().Float64())
+	b.space()
+	b.writeFloat64(h.Neg().PT().Float64())
 }
 
 const (

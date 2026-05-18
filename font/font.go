@@ -243,11 +243,13 @@ func (f *Font) SaveRunes(text string) {
 	}
 }
 
-func (f *Font) MeasureText(fontSize meter.PT, text string) meter.PT {
+func (f *Font) MeasureText(fontSize meter.PT, text string) (meter.PT, []int) {
 	var (
 		advance fixed.Int26_6
 		buf     sfnt.Buffer
 	)
+
+	shifts := make([]int, 0, len(text))
 
 	fontSizeEm := fontSize.FixedI()
 	ppemFont := f.metrics.Ppem.Mul(fontSizeEm)
@@ -259,27 +261,30 @@ func (f *Font) MeasureText(fontSize meter.PT, text string) meter.PT {
 			gl = defaultGlyph()
 		}
 
-		advance += gl.advance.Mul(fontSizeEm)
-
 		if prevGlyphIndex > 0 {
 			kern, err := f.face.Kern(&buf, prevGlyphIndex, gl.index, ppemFont, hintingNone)
 			if err != nil {
 				//TODO: обработка ошибок
 			}
 
+			shifts = append(shifts, kern.Round())
 			advance += kern
 		}
+
+		advance += gl.advance.Mul(fontSizeEm)
 
 		prevGlyphIndex = gl.index
 	}
 
-	width := meter.PT((advance / fixed.Int26_6(f.metrics.Ppem.Round())).Round())
+	width := meter.PT(float64(advance) / float64(f.metrics.Ppem))
 
-	return width
+	//width := (advance / fixed.Int26_6(f.metrics.Ppem.Round())).Round()
+
+	return width, shifts
 }
 
-func (f *Font) SplitText(text string, size meter.PT, width meter.MM) []string {
-	lines := make([]string, 0)
+func (f *Font) SplitText(text string, size meter.PT, width meter.MM) []Segment {
+	lines := make([]Segment, 0)
 
 	for seg := range strings.Lines(text) {
 		lines = append(lines, f.splitSegment(seg, size, width)...)
@@ -288,12 +293,13 @@ func (f *Font) SplitText(text string, size meter.PT, width meter.MM) []string {
 	return lines
 }
 
-func (f *Font) splitSegment(text string, size meter.PT, width meter.MM) []string {
+func (f *Font) splitSegment(text string, size meter.PT, width meter.MM) []Segment {
 	words := strings.Fields(text)
 
-	lines := make([]string, 0, len(words))
+	segments := make([]Segment, 0, len(words))
 
 	line := words[0]
+	textWidth := meter.PT(0)
 
 	for _, word := range words[1:] {
 		candidate := line + " " + word
@@ -302,13 +308,18 @@ func (f *Font) splitSegment(text string, size meter.PT, width meter.MM) []string
 
 		candidateWidth := f.MeasureText(size, candidate)
 		if candidateWidth > width.PT() {
-			lines = append(lines, line)
+			segments = append(segments, Segment{
+				text:   line,
+				width:  textWidth.MM(),
+				shifts: nil,
+			})
 
 			line = word
 
 			continue
 		}
 
+		textWidth = candidateWidth
 		line = candidate
 	}
 

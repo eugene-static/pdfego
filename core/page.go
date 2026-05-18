@@ -6,30 +6,28 @@ import (
 )
 
 type Page struct {
-	x      meter.MM
-	y      meter.MM
 	width  meter.MM
 	height meter.MM
 	margin meter.MM
 }
 
-func (p *Page) X0Y0() (meter.MM, meter.MM) {
-	return p.margin, p.height - p.margin
+func (p Page) X0Y0() (meter.MM, meter.MM) {
+	return p.margin, p.margin - p.height
 }
 
-func (p *Page) XY() (meter.MM, meter.MM) {
-	return p.x, p.y
+func (p Page) Margin() meter.MM {
+	return p.margin
 }
 
-func (p *Page) IsBelowBottomBorder(val meter.MM) bool {
-	return (val + p.margin) > 0
+func (core *Core) Page() Page {
+	return core.page
 }
 
 func (core *Core) SetMargin(margin float64) {
 	core.page.margin = meter.MM(margin)
 }
 
-func (core *Core) AddPage() (*buffer.Buffer, Page) {
+func (core *Core) AddPage() *buffer.Buffer {
 	buf := buffer.New()
 
 	if core.headBuffer != nil && core.headBuffer.Len() > 0 {
@@ -38,7 +36,7 @@ func (core *Core) AddPage() (*buffer.Buffer, Page) {
 
 	core.pageBuffers = append(core.pageBuffers, buf)
 
-	return buf, core.page
+	return buf
 }
 
 func (core *Core) AddHeader() *buffer.Buffer {
@@ -57,12 +55,4 @@ func (core *Core) AddHeader() *buffer.Buffer {
 
 func (core *Core) RemoveHeader() {
 	core.headBuffer.Reset()
-}
-
-func (core *Core) pageBottomEdge() meter.MM {
-	return core.page.height - core.page.margin
-}
-
-func (core *Core) pageRightEdge() meter.MM {
-	return core.page.width - core.page.margin
 }
