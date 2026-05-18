@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/eugene-static/pdf-craft/meter"
+	"github.com/go-text/typesetting/shaping"
 	"golang.org/x/image/font/sfnt"
 	"golang.org/x/image/math/fixed"
 )
@@ -25,6 +26,7 @@ type Font struct {
 	rawData        []byte
 	compressedData []byte
 	manager        fontManager
+	shaper         shaper
 	metrics        Metrics
 }
 
@@ -60,6 +62,11 @@ type fontManager struct {
 	dirtyFlag   bool
 }
 
+type shaper struct {
+	shaper shaping.Shaper
+	input  shaping.Input
+}
+
 func defaultGlyph() *Glyph {
 	return &Glyph{
 		rune:    '□',
@@ -78,6 +85,25 @@ func NewFont(path, alias string) (*Font, error) {
 	if err != nil {
 		return nil, err
 	}
+
+	//fontFile, err := os.Open(path)
+	//if err != nil {
+	//	return nil, err
+	//}
+	//
+	//defer fontFile.Close()
+	//
+	//face, err := font.ParseTTF(fontFile)
+	//if err != nil {
+	//	return nil, err
+	//}
+	//
+	//input := shaping.Input{
+	//	RunStart:     0,
+	//	Direction:    di.DirectionLTR,
+	//	Face:         face,
+	//	FontFeatures: nil,
+	//}
 
 	ppem := fixed.I(1000)
 
@@ -230,30 +256,28 @@ func (f *Font) SaveRunes(text string) {
 
 		buf := new(sfnt.Buffer)
 
-		index, _ := f.face.GlyphIndex(buf, r) //err is always nil
+		gid, _ := f.face.GlyphIndex(buf, r) //err is always nil
 
-		adv, err := f.face.GlyphAdvance(buf, index, f.metrics.Ppem, hintingNone)
+		adv, err := f.face.GlyphAdvance(buf, gid, f.metrics.Ppem, hintingNone)
 		if err != nil {
 			adv = 600
 		}
 
-		f.manager.addGlyph(r, index, adv)
+		f.manager.addGlyph(r, gid, adv)
 
 		f.manager.dirtyFlag = true
 	}
 }
 
-func (f *Font) MeasureText(fontSize meter.PT, text string) (meter.PT, []int) {
+func (f *Font) MeasureText(fontSize meter.PT, text string) meter.PT {
 	var (
 		advance fixed.Int26_6
-		buf     sfnt.Buffer
+		//buf     sfnt.Buffer
 	)
 
-	shifts := make([]int, 0, len(text))
-
 	fontSizeEm := fontSize.FixedI()
-	ppemFont := f.metrics.Ppem.Mul(fontSizeEm)
-	prevGlyphIndex := sfnt.GlyphIndex(0)
+	//ppemFont := f.metrics.Ppem.Mul(fontSizeEm)
+	//prevGlyphIndex := sfnt.GlyphIndex(0)
 
 	for _, c := range text {
 		gl, ok := f.manager.glyphsCache[c]
@@ -261,26 +285,25 @@ func (f *Font) MeasureText(fontSize meter.PT, text string) (meter.PT, []int) {
 			gl = defaultGlyph()
 		}
 
-		if prevGlyphIndex > 0 {
-			kern, err := f.face.Kern(&buf, prevGlyphIndex, gl.index, ppemFont, hintingNone)
-			if err != nil {
-				//TODO: обработка ошибок
-			}
-
-			shifts = append(shifts, kern.Round())
-			advance += kern
-		}
+		//if prevGlyphIndex > 0 {
+		//	kern, err := f.face.Kern(&buf, prevGlyphIndex, gl.index, ppemFont, hintingNone)
+		//	if err != nil {
+		//		//TODO: обработка ошибок
+		//	}
+		//
+		//	advance += kern
+		//}
 
 		advance += gl.advance.Mul(fontSizeEm)
 
-		prevGlyphIndex = gl.index
+		//prevGlyphIndex = gl.index
 	}
 
 	width := meter.PT(float64(advance) / float64(f.metrics.Ppem))
 
 	//width := (advance / fixed.Int26_6(f.metrics.Ppem.Round())).Round()
 
-	return width, shifts
+	return width
 }
 
 func (f *Font) SplitText(text string, size meter.PT, width meter.MM) []Segment {
@@ -304,14 +327,11 @@ func (f *Font) splitSegment(text string, size meter.PT, width meter.MM) []Segmen
 	for _, word := range words[1:] {
 		candidate := line + " " + word
 
-		//TODO: хранить text_width, чтобы не считать заново при позиционировании
-
 		candidateWidth := f.MeasureText(size, candidate)
 		if candidateWidth > width.PT() {
 			segments = append(segments, Segment{
-				text:   line,
-				width:  textWidth.MM(),
-				shifts: nil,
+				text:  line,
+				width: textWidth.MM(),
 			})
 
 			line = word
@@ -323,9 +343,12 @@ func (f *Font) splitSegment(text string, size meter.PT, width meter.MM) []Segmen
 		line = candidate
 	}
 
-	lines = append(lines, line)
+	segments = append(segments, Segment{
+		text:  line,
+		width: textWidth.MM(),
+	})
 
-	return lines
+	return segments
 }
 
 func (g *Glyph) Index() uint16 {
@@ -340,10 +363,10 @@ func (g *Glyph) Advance() int64 {
 	return int64(g.advance.Round())
 }
 
-func (mgr *fontManager) addGlyph(r rune, index sfnt.GlyphIndex, advance fixed.Int26_6) {
+func (mgr *fontManager) addGlyph(r rune, gid sfnt.GlyphIndex, advance fixed.Int26_6) {
 	mgr.glyphsCache[r] = &Glyph{
 		rune:    uint16(r),
-		index:   index,
+		index:   gid,
 		advance: advance,
 	}
 }

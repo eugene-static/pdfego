@@ -1,9 +1,11 @@
 package template
 
 import (
+	"log/slog"
 	"strings"
 
 	core "github.com/eugene-static/pdf-craft/core"
+	"github.com/eugene-static/pdf-craft/font"
 	"github.com/eugene-static/pdf-craft/meter"
 )
 
@@ -19,7 +21,7 @@ type Row struct {
 	columnsLen  int
 }
 
-func (r *Row) Cell(text string, opts ...CellOpts) {
+func (r *Row) Cell(text string, opts ...CellOpts) *Row {
 	var opt CellOpts
 
 	if opts != nil {
@@ -39,32 +41,63 @@ func (r *Row) Cell(text string, opts ...CellOpts) {
 	//r.updateRowSpans(c.rowspan)
 
 	r.updateColIndex(c.colspan)
+
+	return r
 }
 
-func (r *Row) Label(text string) {
+func (r *Row) Label(text string) *Row {
 	r.Cell(text, CellOpts{Align: "LB"})
+
+	return r
 }
 
-func (r *Row) FormL(text string, wrapText bool) {
+func (r *Row) LabelHead(text string) *Row {
+	r.Cell(text, CellOpts{Align: "LB", Font: core.FontBold})
+
+	return r
+}
+
+func (r *Row) FormL(text string, wrapText bool) *Row {
 	r.Cell(text, CellOpts{Align: "LB", Border: "b", Wrap: wrapText})
+
+	return r
 }
 
-func (r *Row) FormC(text string, wrapText bool) {
+func (r *Row) FormC(text string, wrapText bool) *Row {
 	r.Cell(text, CellOpts{Align: "CB", Border: "b", Wrap: wrapText})
+
+	return r
 }
 
-func (r *Row) Paragraph(text string) {
+func (r *Row) Paragraph(text string) *Row {
 	r.Cell(text, CellOpts{Align: "CB"})
+
+	return r
 }
 
-func (r *Row) Underscore(text string) {
+func (r *Row) Underscore(text string) *Row {
 	r.Cell(text, CellOpts{Align: "CT", FontSize: r.core.DefaultFontSize().Sub(1)})
+
+	return r
+}
+
+func (r *Row) Debug() {
+	text := make([][]string, 0, len(r.cells))
+	for _, c := range r.cells {
+		text = append(text, c.textSegments())
+	}
+
+	r.core.Log().Debug("row debug",
+		slog.Any("text", text),
+		slog.Any("height", r.height),
+		slog.Any("width", r.width()),
+	)
 }
 
 func (r *Row) newCell(text string, opts CellOpts) cell {
 	c := cell{
 		core:       r.core,
-		text:       []string{text},
+		text:       []font.Segment{font.NewSegment(text, 0)},
 		font:       core.FontRegular,
 		fontSize:   r.core.DefaultFontSize(),
 		border:     "",
@@ -124,6 +157,14 @@ func (r *Row) newCell(text string, opts CellOpts) cell {
 	r.setHeight(meter.MM(opts.Height), height)
 
 	return c
+}
+
+func (r *Row) width() (w float64) {
+	for _, c := range r.cells {
+		w += c.width.Float64()
+	}
+
+	return w
 }
 
 // Поле cell.height должно быть равно высоте строки, но пока все ячейки не будут созданы, мы не знаем итоговую высоту строки.

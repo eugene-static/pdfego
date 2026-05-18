@@ -21,8 +21,9 @@ type Template struct {
 
 type Block struct {
 	core    *core.Core
-	slots   []*Slot
 	profile byte
+	slots   []*Slot
+	opts    Options
 }
 
 type Slot struct {
@@ -34,12 +35,19 @@ type Table struct {
 	core    *core.Core
 	columns []meter.MM
 	rows    []*Row
+	opts    Options
+}
+
+type Options struct {
+	Spacing meter.MM
+	Indent  meter.MM
 }
 
 type renderer interface {
 	render(b *buffer.Buffer, x, y meter.MM)
 	height() meter.MM
 	width() meter.MM
+	options() Options
 }
 
 func New(core *core.Core) *Template {
@@ -48,33 +56,37 @@ func New(core *core.Core) *Template {
 	}
 }
 
-func (t *Template) Block() *Block {
-	block := t.block(defaultBlock)
-
-	return block
-}
-
-func (t *Template) Header() *Block {
-	block := t.block(headerBlock)
-
-	return block
-}
-
-func (t *Template) EndHeader() *Block {
-	block := t.block(headerStopBlock)
-
-	return block
-}
-
-func (t *Template) block(profile byte) *Block {
-	block := Block{
-		core:    t.core,
-		profile: profile,
+func (t *Template) Block(options ...Options) *Block {
+	var opts Options
+	if len(options) > 0 {
+		opts = options[0]
 	}
 
-	t.blocks = append(t.blocks, &block)
+	block := t.block(defaultBlock, opts)
 
-	return &block
+	return block
+}
+
+func (t *Template) Header(options ...Options) *Block {
+	var opts Options
+	if len(options) > 0 {
+		opts = options[0]
+	}
+
+	block := t.block(headerBlock, opts)
+
+	return block
+}
+
+func (t *Template) EndHeader(options ...Options) *Block {
+	var opts Options
+	if len(options) > 0 {
+		opts = options[0]
+	}
+
+	block := t.block(headerStopBlock, opts)
+
+	return block
 }
 
 func (t *Template) Render() {
@@ -108,6 +120,8 @@ func (t *Template) Render() {
 			y = y0 + headerHeight
 		}
 
+		y += block.opts.Indent
+
 		block.render(buf, x, y)
 
 		y += height
@@ -118,6 +132,18 @@ func (t *Template) Render() {
 
 func (t *Template) Bytes() []byte {
 	return t.core.Bytes()
+}
+
+func (t *Template) block(profile byte, options Options) *Block {
+	block := Block{
+		core:    t.core,
+		profile: profile,
+		opts:    options,
+	}
+
+	t.blocks = append(t.blocks, &block)
+
+	return &block
 }
 
 func (b *Block) Slot() *Slot {
@@ -140,7 +166,7 @@ func (b *Block) render(buf *buffer.Buffer, x, y meter.MM) {
 	for i := range b.slots {
 		b.slots[i].render(buf, x, y)
 
-		x += b.slots[i].width()
+		x += b.slots[i].width() + b.opts.Spacing
 	}
 }
 
@@ -155,7 +181,7 @@ func (b *Block) height() meter.MM {
 }
 
 func (b *Block) width() meter.MM {
-	width := meter.MM(0.0)
+	width := spacing(b.opts.Spacing, len(b.slots))
 
 	for i := range b.slots {
 		width += b.slots[i].width()
@@ -164,9 +190,19 @@ func (b *Block) width() meter.MM {
 	return width
 }
 
-func (s *Slot) Block() *Block {
+func (b *Block) options() Options {
+	return b.opts
+}
+
+func (s *Slot) Block(options ...Options) *Block {
+	var opts Options
+	if len(options) > 0 {
+		opts = options[0]
+	}
+
 	block := Block{
 		core: s.core,
+		opts: opts,
 	}
 
 	s.renderers = append(s.renderers, &block)
@@ -197,6 +233,10 @@ func (s *Slot) Add(slotFunc func(s *Slot)) *Slot {
 
 func (s *Slot) render(buf *buffer.Buffer, x, y meter.MM) {
 	for i := range s.renderers {
+		opts := s.renderers[i].options()
+
+		y += opts.Indent
+
 		s.renderers[i].render(buf, x, y)
 
 		y += s.renderers[i].height()
@@ -300,10 +340,22 @@ func (t *Table) width() (w meter.MM) {
 	return w
 }
 
+func (t *Table) options() Options {
+	return t.opts
+}
+
 func (t *Table) cellHeight(rowIndex, rowspan int) (h meter.MM) {
 	for i := rowIndex; i < min(len(t.rows), rowIndex+rowspan); i++ {
 		h += t.rows[i].height
 	}
 
 	return h
+}
+
+func spacing(sp meter.MM, arrLen int) meter.MM {
+	if arrLen < 2 {
+		return meter.MM(0)
+	}
+
+	return sp * meter.MM(arrLen-1)
 }

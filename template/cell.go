@@ -1,6 +1,7 @@
 package template
 
 import (
+	"slices"
 	"strings"
 	"unicode"
 
@@ -23,14 +24,8 @@ type cell struct {
 	border     string
 	borderSize meter.PT
 	align      string
-	text       []segment
+	text       []font.Segment
 	busy       bool
-}
-
-type segment struct {
-	text  string
-	width meter.MM
-	shift []int
 }
 
 type CellOpts struct {
@@ -45,6 +40,14 @@ type CellOpts struct {
 	Wrap       bool
 }
 
+func (c *cell) textSegments() []string {
+	return slices.Collect(func(yield func(text string) bool) {
+		for _, t := range c.text {
+			yield(t.Text())
+		}
+	})
+}
+
 // BT /[FontAlias] [FontSize] Tf 1 0 0 1 [X] [Y] Tm <[TextHex]> Tj ET
 func (c *cell) render(buf *buffer.Buffer) {
 	if len(c.text) == 0 {
@@ -57,13 +60,13 @@ func (c *cell) render(buf *buffer.Buffer) {
 	buf.WriteFont(c.font, c.fontSize)
 
 	for i, seg := range c.text {
-		dx := c.textDx(f, seg.text)
+		dx := c.textDx(f, seg)
 		dy := c.textDy(i)
 
 		x := c.x + dx
 		y := c.y + dy
 
-		buf.WriteText(f, x, y, seg.text, seg.shift)
+		buf.WriteText(f, x, y, seg.Text())
 	}
 
 	buf.WriteStringLn("ET")
@@ -116,16 +119,18 @@ func (c *cell) renderBorder(buf *buffer.Buffer) {
 	}
 }
 
-func (c *cell) textDx(f *font.Font, text string) (dx meter.MM) {
+func (c *cell) textDx(f *font.Font, seg font.Segment) (dx meter.MM) {
+	textWidth := seg.Width()
+
+	if textWidth == 0 {
+		textWidth = f.MeasureText(c.fontSize, seg.Text()).MM()
+	}
+
 	switch {
 	case strings.ContainsRune(c.align, 'R'):
-		textWidth := f.MeasureText(c.fontSize, text)
-
-		dx = c.width - textWidth.MM() - 0.2
+		dx = c.width - textWidth - 0.2
 	case strings.ContainsRune(c.align, 'C'):
-		textWidth := f.MeasureText(c.fontSize, text)
-
-		dx = (c.width - textWidth.MM()) / 2
+		dx = (c.width - textWidth) / 2
 	default:
 		// чтобы текст не прилипал к границе
 		dx = 0.2

@@ -56,24 +56,17 @@ func (b *Buffer) WriteFont(alias string, fontSize meter.PT) {
 }
 
 // "1 0 0 1 x y Tm" задает абсолютную позицию текста на странице.
-func (b *Buffer) WriteText(font *font.Font, x, y meter.MM, text string, shift []int) {
+func (b *Buffer) WriteText(font *font.Font, x, y meter.MM, text string) {
 	b.content.WriteString("1 0 0 1 ")
 	b.writeXY(x, y)
-	b.content.WriteString(" Tm [")
+	b.content.WriteString(" Tm <")
 
-	for i, r := range text {
+	for _, r := range text {
 		gid := font.GID(r)
-		b.writeString(" <")
 		b.writeUint16D4(gid)
-		b.writeString(">")
-
-		if i < len(shift) && shift[i] > 0 {
-			b.space()
-			b.writeInt64(int64(shift[i]))
-		}
 	}
 
-	b.content.WriteString("] TJ\n")
+	b.content.WriteString("> Tj\n")
 }
 
 // /W [1 [100] 3 [95 83 99]]

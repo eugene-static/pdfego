@@ -20,16 +20,18 @@ func (upd UPD) FillTemplate() ([]byte, error) {
 		return nil, err
 	}
 
-	//err = core.SetFontBold("../fonts/LiberationSans-Bold.ttf")
-	//if err != nil {
-	//	t.Error(err)
-	//}
+	err = c.SetFontBold("./fonts/LiberationSans-Bold.ttf")
+	if err != nil {
+		return nil, err
+	}
 
 	t := tmpl.New(c)
 
-	headBlock := t.Block()
+	headBlock := t.Block(tmpl.Options{Spacing: 3})
 	headBlock.Slot().Add(upd.titleHeader)
-	headBlock.Slot().Add(upd.numberHeader)
+	headBlock.Slot().
+		Add(upd.numberHeader).
+		Add(upd.requisites)
 
 	t.Render()
 
@@ -48,8 +50,8 @@ func (upd UPD) titleHeader(slot *tmpl.Slot) {
 	r3.Cell("1 - счет-фактура и\nпередаточный\nдокумент (акт)\n2 - передаточный\nдокумент (акт)", tmpl.CellOpts{Height: 10, Align: "LB", Colspan: 2, FontSize: 5, Wrap: true})
 }
 
-func (upd UPD) numberHeader(field *tmpl.Slot) {
-	numbersDates := field.Block()
+func (upd UPD) numberHeader(slot *tmpl.Slot) {
+	numbersDates := slot.Block()
 	numbers := numbersDates.Slot()
 
 	table := numbers.Table(15, 5, 20, 5, 20, 10)
@@ -74,6 +76,43 @@ func (upd UPD) numberHeader(field *tmpl.Slot) {
 
 	table = edition.Table(190)
 	r1 = table.Row()
-	r1.Cell("Приложение № 1 к постановлению\nПравительства Российской Федерации\nот 26 декабря 2011 г. № 1137\n(в редакции постановления\nПравительства Российской Федерации\nот 16 августа 2024 г. № 1096)",
+	r1.Cell("Приложение № 1 к постановлению Правительства Российской Федерации от 26 декабря 2011 г. № 1137\n(в редакции постановления Правительства Российской Федерации от 16 августа 2024 г. № 1096)",
 		tmpl.CellOpts{Align: "RT", FontSize: 5, Wrap: true})
+}
+
+func (upd UPD) requisites(slot *tmpl.Slot) {
+	requisites := slot.Block(tmpl.Options{Indent: 5})
+	company := requisites.Slot()
+
+	table := company.Table(45, 80, 10)
+
+	table.Row().LabelHead("Продавец:").FormL(upd.OrgPrintName, true).Paragraph("(2)")
+	table.Row().Label("Адрес:").FormL(upd.OrgPrintAddress, true).Paragraph("(2а)")
+	table.Row().Label("ИНН/КПП продавца:").FormL(upd.OrgInnKpp, false).Paragraph("(2б)")
+	table.Row().Label("Грузоотправитель и его адрес:").FormL(upd.ShipperPrintNameAddress, false).Paragraph("(3)")
+	table.Row().Label("Грузополучатель и его адрес:").FormL(upd.ConsigneePrintNameAddress, false).Paragraph("(4)")
+	table.Row().Label("К платежно-расчетному документу №:").FormL(upd.PaymentAndSettlementDocument, false).Paragraph("(5)")
+	table.Row().Label("Документ об отгрузке:").FormL(upd.ShippingDocuments, true).Paragraph("(5а)")
+	table.Row().Cell(
+		"К счету-фактуре (счетам-фактурам), выставленному (выставленным)\nпри получении оплаты, частичной оплаты или иных платежей в счет\nпредстоящих поставок товаров (выполнения работ, оказания услуг),",
+		tmpl.CellOpts{Align: "LB", Wrap: true, Colspan: 2})
+	table.Row().Label("передачи имущественных прав №:").FormL("", false)
+	table.Row().Label("исправление №:").FormL("", false).Paragraph("(5б)")
+
+	supplier := requisites.Slot()
+	table = supplier.Table(45, 80, 10)
+
+	table.Row().LabelHead("Покупатель:").FormL(upd.SupplierPrintName, true).Paragraph("(6)")
+	table.Row().Label("Адрес:").FormL(upd.SupplierPrintAddress, true).Paragraph("(6а)")
+	table.Row().Label("ИНН/КПП покупателя:").FormL(upd.SupplierInnKpp, false).Paragraph("(6б)")
+	table.Row().Label("Валюта: наименование, код:").FormL(upd.CurrencyNameCode, false).Paragraph("(7)")
+	table.Row().
+		Cell("Идентификатор государственного контракта,\nдоговора (соглашения) (при наличии):", tmpl.CellOpts{Align: "LB", Wrap: true}).
+		FormL("", false).
+		Paragraph("(8)")
+}
+
+func tableHeader(slot *tmpl.Slot) {
+	table := slot.Table(15, 5)
+
 }

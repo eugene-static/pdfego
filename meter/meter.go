@@ -35,6 +35,10 @@ func (mm MM) PT() PT {
 	return PT(mm * (dpi / inch))
 }
 
+func (mm MM) Float64() float64 {
+	return float64(mm)
+}
+
 func (mm MM) Abs() (res MM) {
 	res = mm
 

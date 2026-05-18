@@ -7,3 +7,18 @@ type Segment struct {
 	width  meter.MM
 	shifts []int
 }
+
+func NewSegment(text string, width meter.MM) Segment {
+	return Segment{
+		text:  text,
+		width: width,
+	}
+}
+
+func (s *Segment) Text() string {
+	return s.text
+}
+
+func (s *Segment) Width() meter.MM {
+	return s.width
+}

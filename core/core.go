@@ -125,6 +125,10 @@ func (core *Core) Bytes() []byte {
 	return core.mainBuffer.Bytes()
 }
 
+func (core *Core) Log() *slog.Logger {
+	return core.log
+}
+
 //func (core *Core) x() float64 {
 //	return core.cursor.x
 //}
