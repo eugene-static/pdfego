@@ -1,33 +1,14 @@
-package main
+package upd
 
 import (
-	"log/slog"
-	"os"
-
 	"github.com/eugene-static/pdf-craft/core"
 	tmpl "github.com/eugene-static/pdf-craft/template"
 )
 
-func (upd UPD) FillTemplate() ([]byte, error) {
-	c := core.New(core.Landscape)
-	c.SetLogger(slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelDebug})))
-	c.SetMargin(3)
-	c.SetDefaultFontSize(6)
-	c.SetBorders(0.2, 0.8)
+func (upd UPD) FillTemplate(c *core.Core) ([]byte, error) {
+	template := tmpl.New(c)
 
-	err := c.SetFontRegular("./fonts/LiberationSans-Regular.ttf")
-	if err != nil {
-		return nil, err
-	}
-
-	err = c.SetFontBold("./fonts/LiberationSans-Bold.ttf")
-	if err != nil {
-		return nil, err
-	}
-
-	t := tmpl.New(c)
-
-	headBlock := t.Block(tmpl.Options{Spacing: 3})
+	headBlock := template.Block(tmpl.Options{Spacing: 3})
 
 	headBlock.
 		Slot().
@@ -38,14 +19,24 @@ func (upd UPD) FillTemplate() ([]byte, error) {
 		Add(upd.numberHeader).
 		Add(upd.requisites)
 
-	t.
+	template.
 		Block(tmpl.Options{Indent: 5}).
 		Slot().
 		Add(tableHeader)
 
-	t.Render()
+	template.
+		Header().
+		Add(tableNumberHeader)
 
-	return t.Bytes(), nil
+	tmpl.Repeat(
+		template,
+		upd.Details,
+		tableDetails,
+	)
+
+	template.Render()
+
+	return template.Bytes(), nil
 }
 
 func (upd UPD) titleHeader(slot *tmpl.Slot) {
@@ -123,7 +114,7 @@ func (upd UPD) requisites(slot *tmpl.Slot) {
 }
 
 func tableHeader(slot *tmpl.Slot) {
-	table := slot.Table(21, 5, 40, 9, 10, 10, 20, 20, 25, 20, 20, 25, 25, 10, 10, 25)
+	table := slot.Table(21, 5, 83, 9, 7, 10, 15, 15, 20, 13, 13, 20, 20, 7, 10, 22)
 
 	optsBounded := tmpl.CellOpts{
 		Height: 15,
@@ -141,6 +132,7 @@ func tableHeader(slot *tmpl.Slot) {
 	}
 
 	optsBoundedCS2 := tmpl.CellOpts{
+		//Height:  10,
 		Align:   "CM",
 		Border:  "o",
 		Wrap:    true,
@@ -166,6 +158,50 @@ func tableHeader(slot *tmpl.Slot) {
 	table.Row().
 		Cell("код", optsBounded).
 		Cell("условное\nобозна-\nчение\n(нацио-\nнальное)", optsBounded).
-		Cell("цифровой\nкод", optsBounded).
+		Cell("цифро-\nвой код", optsBounded).
 		Cell("краткое\nнаимено-\nвание", optsBounded)
+}
+
+func tableNumberHeader(block *tmpl.Block) {
+	table := block.Slot().Table(21, 5, 83, 9, 7, 10, 15, 15, 20, 13, 13, 20, 20, 7, 10, 22)
+
+	table.Row().
+		Cell("А", tmpl.CellOpts{Align: "CM", Height: 3, Border: "tblR"}).
+		Bounded("1").
+		Bounded("1а").
+		Bounded("1б").
+		Bounded("2").
+		Bounded("2а").
+		Bounded("3").
+		Bounded("4").
+		Bounded("5").
+		Bounded("6").
+		Bounded("7").
+		Bounded("8").
+		Bounded("9").
+		Bounded("10").
+		Bounded("10а").
+		Bounded("11")
+}
+
+func tableDetails(block *tmpl.Block, item Detail) {
+	table := block.Slot().Table(21, 5, 83, 9, 7, 10, 15, 15, 20, 13, 13, 20, 20, 7, 10, 22)
+
+	table.Row().
+		Cell(item.Code, tmpl.CellOpts{Align: "CB", Border: "tblR"}).
+		Cell(item.Number, tmpl.CellOpts{Align: "CB", Border: "o"}).
+		Cell(item.Title, tmpl.CellOpts{Align: "LB", Border: "o", Wrap: true}).
+		Cell("", tmpl.CellOpts{Align: "CB", Border: "o"}).
+		Cell(item.OkeiID, tmpl.CellOpts{Align: "RB", Border: "o"}).
+		Cell(item.OkeiCode, tmpl.CellOpts{Align: "LB", Border: "o"}).
+		Cell(item.Quantity, tmpl.CellOpts{Align: "RB", Border: "o"}).
+		Cell(item.Price, tmpl.CellOpts{Align: "RB", Border: "o"}).
+		Cell(item.AmountWithoutVat, tmpl.CellOpts{Align: "RB", Border: "o"}).
+		Cell(item.Excise, tmpl.CellOpts{Align: "RB", Border: "o"}).
+		Cell(item.Vat, tmpl.CellOpts{Align: "RB", Border: "o"}).
+		Cell(item.AmountVat, tmpl.CellOpts{Align: "RB", Border: "o"}).
+		Cell(item.AmountWithVat, tmpl.CellOpts{Align: "RB", Border: "o"}).
+		Cell(item.CountryID, tmpl.CellOpts{Align: "RB", Border: "o"}).
+		Cell(item.CountryName, tmpl.CellOpts{Align: "LB", Border: "o"}).
+		Cell(item.Gtd, tmpl.CellOpts{Align: "LB", Border: "o"})
 }

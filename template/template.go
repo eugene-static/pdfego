@@ -31,13 +31,6 @@ type Slot struct {
 	renderers []renderer
 }
 
-type Table struct {
-	core    *core.Core
-	columns []meter.MM
-	rows    []*Row
-	opts    Options
-}
-
 type Options struct {
 	Spacing meter.MM
 	Indent  meter.MM
@@ -95,9 +88,9 @@ func (t *Template) Render() {
 	page := t.core.Page()
 	x0, y0 := page.X0Y0()
 	x, y := x0, y0
+	headerHeight := meter.MM(0)
 
 	for _, block := range t.blocks {
-		headerHeight := meter.MM(0)
 		height := block.height()
 
 		switch block.profile {
@@ -121,9 +114,7 @@ func (t *Template) Render() {
 			y = y0 + headerHeight
 		}
 
-		y += block.opts.Indent
-
-		block.render(buf, x, y)
+		block.render(buf, x, y+block.opts.Indent)
 
 		y += height
 	}
@@ -163,6 +154,13 @@ func (b *Block) Add(blockFunc func(*Block)) *Block {
 	return b
 }
 
+func Repeat[T any](tmpl *Template, items []T, blockFunc func(b *Block, item T)) {
+	for i := range items {
+		b := tmpl.Block()
+		blockFunc(b, items[i])
+	}
+}
+
 func (b *Block) render(buf *buffer.Buffer, x, y meter.MM) {
 	for i := range b.slots {
 		b.slots[i].render(buf, x, y)
@@ -178,6 +176,7 @@ func (b *Block) height() meter.MM {
 		heights = append(heights, b.slots[i].height())
 	}
 
+	//return slices.Max(heights)
 	return slices.Max(heights) + b.opts.Indent
 }
 
@@ -262,95 +261,6 @@ func (s *Slot) width() meter.MM {
 	}
 
 	return width
-}
-
-func (t *Table) Row() *Row {
-	row := t.newRow()
-
-	t.rows = append(t.rows, row)
-
-	return row
-}
-
-func (t *Table) Add(rowFunc func(t *Table)) {
-	rowFunc(t)
-}
-
-func (t *Table) newRow() *Row {
-	columnsLen := len(t.columns)
-	cells := make([]cell, columnsLen)
-	rowspans := make([]int, columnsLen)
-
-	rowsLen := len(t.rows)
-
-	if rowsLen > 0 {
-		copy(rowspans, t.rows[rowsLen-1].decrementRowSpans())
-	}
-
-	r := &Row{
-		core:       t.core,
-		height:     meter.FontHeight(t.core.DefaultFontSize()),
-		columns:    t.columns,
-		columnsLen: columnsLen,
-		cells:      cells,
-		rowspans:   rowspans,
-	}
-
-	return r
-}
-
-func (t *Table) render(buf *buffer.Buffer, x, y meter.MM) {
-	height := meter.MM(0.0)
-
-	for rowIndex, row := range t.rows {
-		row.x = x
-		row.y = y + height
-		height += row.height
-
-		cellX := row.x
-
-		for i, c := range row.cells {
-			c.x = cellX
-			c.y = row.y
-			cellX += t.columns[i]
-
-			if !c.busy {
-				continue
-			}
-
-			c.height = t.cellHeight(rowIndex, c.rowspan)
-
-			c.render(buf)
-		}
-	}
-}
-
-func (t *Table) height() (h meter.MM) {
-	for i := range t.rows {
-		h += t.rows[i].height
-	}
-
-	return h + t.options().Indent
-}
-
-func (t *Table) width() (w meter.MM) {
-	for i := range t.columns {
-		w += t.columns[i]
-	}
-
-	return w
-}
-
-func (t *Table) options() Options {
-	return t.opts
-}
-
-func (t *Table) cellHeight(rowIndex, rowspan int) (h meter.MM) {
-	for i := rowIndex; i < min(len(t.rows), rowIndex+rowspan); i++ {
-		h += t.rows[i].height
-	}
-
-	return h
 }
 
 func spacing(sp meter.MM, arrLen int) meter.MM {

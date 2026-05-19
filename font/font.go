@@ -294,10 +294,73 @@ func (f *Font) SplitText(text string, size meter.PT, width meter.MM) []Segment {
 	lines := make([]Segment, 0)
 
 	for seg := range strings.Lines(text) {
-		lines = append(lines, f.splitSegment(seg, size, width)...)
+		lines = slices.Concat(lines, f.splitSegment(seg, size, width))
 	}
 
 	return lines
+}
+
+func (f *Font) SplitTextOptimized(buf []Segment, text string, size meter.PT, width meter.MM) []Segment {
+	segments := make([]Segment, 0)
+	targetWidth := width.PT()
+
+	start := 0
+	for start < len(text) && (text[start] == ' ' || text[start] == '\t' || text[start] == '\n' || text[start] == '\r') {
+		start++
+	}
+
+	if start >= len(text) {
+		return segments
+	}
+
+	lineStart := 0
+	lineEnd := start
+	textWidth := f.MeasureText(size, text[:lineEnd])
+
+	for i := start; i < len(text); {
+		for i < len(text) && (text[i] == ' ' || text[i] == '\t' || text[i] == '\n' || text[i] == '\r') {
+			i++
+		}
+
+		wordStart := i
+		for i < len(text) && !(text[i] == ' ' || text[i] == '\t' || text[i] == '\n' || text[i] == '\r') {
+			i++
+		}
+
+		wordEnd := i
+
+		candidate := text[lineStart:wordEnd]
+		candidateWidth := f.MeasureText(size, candidate)
+
+		if candidateWidth > targetWidth || text[lineEnd] == '\n' {
+			currentLine := strings.Clone(text[lineStart:lineEnd])
+
+			segments = append(segments, Segment{
+				text:  currentLine,
+				width: textWidth.MM(),
+			})
+
+			lineStart = wordStart
+			lineEnd = wordEnd
+
+			continue
+		}
+
+		lineEnd = wordEnd
+		textWidth = candidateWidth
+	}
+
+	if lineStart < len(text) {
+		lastLine := strings.Clone(text[lineStart:lineEnd])
+		lineWidth := f.MeasureText(size, lastLine)
+
+		segments = append(segments, Segment{
+			text:  lastLine,
+			width: lineWidth.MM(),
+		})
+	}
+
+	return segments
 }
 
 func (f *Font) splitSegment(text string, size meter.PT, width meter.MM) []Segment {

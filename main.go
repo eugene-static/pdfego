@@ -2,16 +2,36 @@ package main
 
 import (
 	"log"
+	"log/slog"
 	"os"
 	"time"
+
+	"github.com/eugene-static/pdf-craft/core"
+	"github.com/eugene-static/pdf-craft/upd"
 )
 
 func main() {
 	t := time.Now()
 
-	upd := NewUPD(1)
+	c := core.New(core.Landscape)
+	c.SetLogger(slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelDebug})))
+	c.SetMargin(3)
+	c.SetDefaultFontSize(6)
+	c.SetBorders(0.2, 1)
 
-	bytes, err := upd.FillTemplate()
+	err := c.SetFontRegular("./fonts/LiberationSans-Regular.ttf")
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	err = c.SetFontBold("./fonts/LiberationSans-Bold.ttf")
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	upd := upd.NewUPD(10000)
+
+	bytes, err := upd.FillTemplate(c)
 	if err != nil {
 		log.Fatal(err)
 	}
