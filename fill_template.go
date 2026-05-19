@@ -28,10 +28,20 @@ func (upd UPD) FillTemplate() ([]byte, error) {
 	t := tmpl.New(c)
 
 	headBlock := t.Block(tmpl.Options{Spacing: 3})
-	headBlock.Slot().Add(upd.titleHeader)
-	headBlock.Slot().
+
+	headBlock.
+		Slot().
+		Add(upd.titleHeader)
+
+	headBlock.
+		Slot().
 		Add(upd.numberHeader).
 		Add(upd.requisites)
+
+	t.
+		Block(tmpl.Options{Indent: 5}).
+		Slot().
+		Add(tableHeader)
 
 	t.Render()
 
@@ -113,6 +123,49 @@ func (upd UPD) requisites(slot *tmpl.Slot) {
 }
 
 func tableHeader(slot *tmpl.Slot) {
-	table := slot.Table(15, 5)
+	table := slot.Table(21, 5, 40, 9, 10, 10, 20, 20, 25, 20, 20, 25, 25, 10, 10, 25)
 
+	optsBounded := tmpl.CellOpts{
+		Height: 15,
+		Align:  "CM",
+		Border: "o",
+		Wrap:   true,
+	}
+
+	optsBoundedRS2 := tmpl.CellOpts{
+		Height:  10,
+		Align:   "CM",
+		Border:  "o",
+		Wrap:    true,
+		Rowspan: 2,
+	}
+
+	optsBoundedCS2 := tmpl.CellOpts{
+		Align:   "CM",
+		Border:  "o",
+		Wrap:    true,
+		Colspan: 2,
+	}
+
+	table.Row().
+		Cell("Код\nтовара/работ, услуг", optsBoundedRS2).
+		Cell("№\nп/п", optsBoundedRS2).
+		Cell("Наименование товара\n(описание выполненных работ, оказанных услуг),\nимущественного права", optsBoundedRS2).
+		Cell("Код\nвида\nтовара", optsBoundedRS2).
+		Cell("Единица\nизмерения", optsBoundedCS2).
+		Cell("Количество\n(объем)", optsBoundedRS2).
+		Cell("Цена\n(тариф) за\nединицу\nизмерения", optsBoundedRS2).
+		Cell("Стоимость\nтоваров (работ,\nуслуг),\nимущественных\nправ без налога -\nвсего", optsBoundedRS2).
+		Cell("В том числе\nсумма\nакциза", optsBoundedRS2).
+		Cell("Налоговая\nставка", optsBoundedRS2).
+		Cell("Сумма налога,\nпредъявляемая\nпокупателю", optsBoundedRS2).
+		Cell("Стоимость\nтоваров (работ,\nуслуг),\nимущественных\nправ с налогом -\nвсего", optsBoundedRS2).
+		Cell("Страна\nпроисхождения\nтовара", optsBoundedCS2).
+		Cell("Регистрационный\nномер декларации\nна товары или\nрегистрационный\nномер партии\nтовара,\nподлежащего\nпрослеживаемости", optsBoundedRS2)
+
+	table.Row().
+		Cell("код", optsBounded).
+		Cell("условное\nобозна-\nчение\n(нацио-\nнальное)", optsBounded).
+		Cell("цифровой\nкод", optsBounded).
+		Cell("краткое\nнаимено-\nвание", optsBounded)
 }

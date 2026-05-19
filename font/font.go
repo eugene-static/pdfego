@@ -272,12 +272,9 @@ func (f *Font) SaveRunes(text string) {
 func (f *Font) MeasureText(fontSize meter.PT, text string) meter.PT {
 	var (
 		advance fixed.Int26_6
-		//buf     sfnt.Buffer
 	)
 
 	fontSizeEm := fontSize.FixedI()
-	//ppemFont := f.metrics.Ppem.Mul(fontSizeEm)
-	//prevGlyphIndex := sfnt.GlyphIndex(0)
 
 	for _, c := range text {
 		gl, ok := f.manager.glyphsCache[c]
@@ -285,23 +282,10 @@ func (f *Font) MeasureText(fontSize meter.PT, text string) meter.PT {
 			gl = defaultGlyph()
 		}
 
-		//if prevGlyphIndex > 0 {
-		//	kern, err := f.face.Kern(&buf, prevGlyphIndex, gl.index, ppemFont, hintingNone)
-		//	if err != nil {
-		//		//TODO: обработка ошибок
-		//	}
-		//
-		//	advance += kern
-		//}
-
 		advance += gl.advance.Mul(fontSizeEm)
-
-		//prevGlyphIndex = gl.index
 	}
 
 	width := meter.PT(float64(advance) / float64(f.metrics.Ppem))
-
-	//width := (advance / fixed.Int26_6(f.metrics.Ppem.Round())).Round()
 
 	return width
 }

@@ -40,45 +40,37 @@ func (r *Row) Cell(text string, opts ...CellOpts) *Row {
 
 	//r.updateRowSpans(c.rowspan)
 
-	r.updateColIndex(c.colspan)
+	r.updateColIndex(c.colspan, c.rowspan)
 
 	return r
 }
 
 func (r *Row) Label(text string) *Row {
-	r.Cell(text, CellOpts{Align: "LB"})
-
-	return r
+	return r.Cell(text, CellOpts{Align: "LB"})
 }
 
 func (r *Row) LabelHead(text string) *Row {
-	r.Cell(text, CellOpts{Align: "LB", Font: core.FontBold})
-
-	return r
+	return r.Cell(text, CellOpts{Align: "LB", Font: core.FontBold})
 }
 
 func (r *Row) FormL(text string, wrapText bool) *Row {
-	r.Cell(text, CellOpts{Align: "LB", Border: "b", Wrap: wrapText})
-
-	return r
+	return r.Cell(text, CellOpts{Align: "LB", Border: "b", Wrap: wrapText})
 }
 
 func (r *Row) FormC(text string, wrapText bool) *Row {
-	r.Cell(text, CellOpts{Align: "CB", Border: "b", Wrap: wrapText})
-
-	return r
+	return r.Cell(text, CellOpts{Align: "CB", Border: "b", Wrap: wrapText})
 }
 
 func (r *Row) Paragraph(text string) *Row {
-	r.Cell(text, CellOpts{Align: "CB"})
-
-	return r
+	return r.Cell(text, CellOpts{Align: "CB"})
 }
 
 func (r *Row) Underscore(text string) *Row {
-	r.Cell(text, CellOpts{Align: "CT", FontSize: r.core.DefaultFontSize().Sub(1)})
+	return r.Cell(text, CellOpts{Align: "CT", FontSize: r.core.DefaultFontSize().Sub(1)})
+}
 
-	return r
+func (r *Row) Bounded(text string) *Row {
+	return r.Cell(text, CellOpts{Align: "CM", Border: "o", Wrap: true})
 }
 
 func (r *Row) Debug() {
@@ -91,6 +83,7 @@ func (r *Row) Debug() {
 		slog.Any("text", text),
 		slog.Any("height", r.height),
 		slog.Any("width", r.width()),
+		slog.Any("rowspans", r.rowspans),
 	)
 }
 
@@ -195,9 +188,11 @@ func (r *Row) setColIndex() {
 
 // Каждая ячейка имеет свой colspan > 0. Если colspan > 1, то пропущенным ячейкам тоже необходимо присвоить rowspan этой ячейки.
 // Сдвигаем курсор к следующей ячейке.
-func (r *Row) updateColIndex(colspan int) {
-	for i := r.columnIndex; i < min(r.columnIndex+colspan, r.columnsLen); i++ {
-		r.rowspans[i]++
+func (r *Row) updateColIndex(colspan, rowspan int) {
+	shift := r.columnIndex + colspan
+
+	for i := r.columnIndex; i < min(shift, r.columnsLen); i++ {
+		r.rowspans[i] += rowspan
 		r.columnIndex = i
 	}
 }

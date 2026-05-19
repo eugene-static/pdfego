@@ -2,6 +2,7 @@ package core
 
 import (
 	"log/slog"
+	"strconv"
 	"time"
 
 	"github.com/eugene-static/pdf-craft/buffer"
@@ -228,7 +229,7 @@ func (core *Core) writePage(buf *buffer.Buffer) int64 {
 }
 
 func (core *Core) writeFileHeader() {
-	core.mainBuffer.WriteStringLn("%PDF-1.4")
+	core.mainBuffer.WriteStringLn("%PDF-1.6")
 	core.mainBuffer.WriteStringLn("%\x80\x80\x80\x80")
 }
 
@@ -269,7 +270,7 @@ func (core *Core) writeXref() int {
 
 	b.WriteStringLn("xref")
 	b.WriteFieldInt("0", len(core.offsets))
-	b.WriteStringLn("0000000000 65535 f")
+	b.WriteStringLn("0000000000 65535 f\r")
 	for i := range core.offsets {
 		if i == 0 {
 			continue
@@ -295,6 +296,7 @@ func (core *Core) writeTrailer(root, info int64) {
 func (core *Core) writeEOF(xrefOffset int) {
 	b := core.mainBuffer
 
-	b.WriteFieldInt("startxref\n", xrefOffset)
+	b.WriteStringLn("startxref")
+	b.WriteStringLn(strconv.Itoa(xrefOffset))
 	b.WriteStringLn("%%EOF")
 }

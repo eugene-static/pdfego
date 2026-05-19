@@ -41,6 +41,7 @@ type Table struct {
 type Options struct {
 	Spacing meter.MM
 	Indent  meter.MM
+	Ledge   meter.MM
 }
 
 type renderer interface {
@@ -177,7 +178,7 @@ func (b *Block) height() meter.MM {
 		heights = append(heights, b.slots[i].height())
 	}
 
-	return slices.Max(heights)
+	return slices.Max(heights) + b.opts.Indent
 }
 
 func (b *Block) width() meter.MM {
@@ -244,7 +245,7 @@ func (s *Slot) render(buf *buffer.Buffer, x, y meter.MM) {
 }
 
 func (s *Slot) height() meter.MM {
-	height := meter.MM(0.0)
+	height := meter.MM(0)
 
 	for i := range s.renderers {
 		height += s.renderers[i].height()
@@ -308,10 +309,10 @@ func (t *Table) render(buf *buffer.Buffer, x, y meter.MM) {
 
 		cellX := row.x
 
-		for _, c := range row.cells {
+		for i, c := range row.cells {
 			c.x = cellX
 			c.y = row.y
-			cellX += c.width
+			cellX += t.columns[i]
 
 			if !c.busy {
 				continue
@@ -329,7 +330,7 @@ func (t *Table) height() (h meter.MM) {
 		h += t.rows[i].height
 	}
 
-	return h
+	return h + t.options().Indent
 }
 
 func (t *Table) width() (w meter.MM) {

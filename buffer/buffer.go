@@ -172,7 +172,7 @@ func (b *Buffer) WriteRefArray(field string, objNums []int64) {
 
 func (b *Buffer) WriteXref(ref int) {
 	b.writeInt64D10(int64(ref))
-	b.writeString(" 00000 n\n")
+	b.writeString(" 00000 n\r\n")
 }
 
 // /Type /Page
