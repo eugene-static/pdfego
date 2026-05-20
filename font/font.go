@@ -300,8 +300,8 @@ func (f *Font) SplitText(text string, size meter.PT, width meter.MM) []Segment {
 	return lines
 }
 
-func (f *Font) SplitTextOptimized(buf []Segment, text string, size meter.PT, width meter.MM) []Segment {
-	segments := make([]Segment, 0)
+func (f *Font) SplitTextOptimized(buf []Segment, text string, size meter.PT, width meter.MM) (segments []Segment) {
+	copy(segments, buf[:0])
 	targetWidth := width.PT()
 
 	start := 0

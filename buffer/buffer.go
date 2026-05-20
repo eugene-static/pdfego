@@ -32,9 +32,7 @@ func (b *Buffer) Reset() {
 }
 
 func (b *Buffer) WriteFrom(buf *Buffer) {
-	b.content.Grow(buf.Len())
-	buf.content.WriteTo(b.content) //TODO: обработка ошибок
-	buf.Reset()
+	b.content.ReadFrom(buf.content) //TODO: обработка ошибок
 	b.ln()
 }
 
