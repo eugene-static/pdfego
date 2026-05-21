@@ -18,18 +18,20 @@ const (
 )
 
 type Core struct {
-	log         *slog.Logger
-	mainBuffer  *buffer.Buffer
-	headBuffer  *buffer.Buffer
-	pageBuffers []*buffer.Buffer
-	cursor      cursor
-	page        Page
-	border      border
-	fonts       map[string]*font.Font
-	fontSize    meter.PT
-	compress    bool
-	pagesCount  int64
-	offsets     []int
+	log        *slog.Logger
+	mainBuffer *buffer.Buffer
+	headBuffer *buffer.Buffer
+	pageBuffer *buffer.Buffer
+	cursor     cursor
+	page       Page
+	border     border
+	fonts      map[string]*font.Font
+	fontSize   meter.PT
+	compress   bool
+	pagesCount int64
+	cellCount  int
+	offsets    []int
+	pageObjs   []int64
 }
 
 type cursor struct {
@@ -55,6 +57,7 @@ func New(orientation string) *Core {
 
 	return &Core{
 		mainBuffer: buffer.New(),
+		pageBuffer: buffer.New(),
 		fonts:      make(map[string]*font.Font),
 		page:       pg,
 		offsets:    offsets,
@@ -109,6 +112,10 @@ func (core *Core) SetDefaultFontSize(fontSize int) {
 	core.fontSize = meter.PT(fontSize)
 }
 
+func (core *Core) IncreaseCellsCount(n int) {
+	core.cellCount += n
+}
+
 func (core *Core) DefaultFontSize() meter.PT {
 	return core.fontSize
 }
@@ -125,42 +132,14 @@ func (core *Core) Bytes() []byte {
 	return core.mainBuffer.Bytes()
 }
 
+func (core *Core) Font(alias string) *font.Font {
+
+	return core.fonts[alias]
+}
+
 func (core *Core) Log() *slog.Logger {
 	return core.log
 }
-
-//func (core *Core) x() float64 {
-//	return core.cursor.x
-//}
-//
-//func (core *Core) y() float64 {
-//	return core.cursor.y
-//}
-//
-//func (core *Core) x0() float64 {
-//	return core.page.margin
-//}
-//
-//func (core *Core) y0() float64 {
-//	return core.page.margin
-//}
-//
-//func (core *Core) x0y0() (float64, float64) {
-//	return core.x0(), core.y0()
-//}
-//
-//func (core *Core) setX(x float64) {
-//	core.cursor.x = x
-//}
-//
-//func (core *Core) setY(y float64) {
-//	core.cursor.y = y
-//}
-//
-//func (core *Core) setXY(x, y float64) {
-//	core.setX(x)
-//	core.setY(y)
-//}
 
 func (core *Core) newObject() int64 {
 	objNum := int64(len(core.offsets))
@@ -176,22 +155,6 @@ func (core *Core) setObject(objNum int) {
 	xLen := core.mainBuffer.Len()
 
 	core.offsets[objNum] = xLen
-}
-
-//func (core *Core) PtX(x float64) float64 {
-//	return meter.Pt(x)
-//}
-//
-//func (core *Core) PtY(y float64) float64 {
-//	return core.page.height - meter.Pt(y)
-//}
-//
-//func (core *Core) PtXY(x, y meter.MM) (float64, float64) {
-//	return core.PtX(x), core.PtY(y)
-//}
-
-func (core *Core) Font(alias string) *font.Font {
-	return core.fonts[alias]
 }
 
 func (core *Core) fontRegular() *font.Font {

@@ -23,6 +23,14 @@ func (b *Buffer) Len() int {
 	return b.content.Len()
 }
 
+func (b *Buffer) Cap() int {
+	return b.content.Cap()
+}
+
+func (b *Buffer) Grow(n int) {
+	b.content.Grow(n)
+}
+
 func (b *Buffer) Bytes() []byte {
 	return b.content.Bytes()
 }
@@ -31,14 +39,15 @@ func (b *Buffer) Reset() {
 	b.content.Reset()
 }
 
-func (b *Buffer) WriteFrom(buf *Buffer) {
+func (b *Buffer) ReadFrom(buf *Buffer) {
 	b.content.Grow(buf.Len())
-	buf.content.WriteTo(b.content) //TODO: обработка ошибок
+	b.content.ReadFrom(buf.content) //TODO: обработка ошибок
 	buf.Reset()
 	b.ln()
 }
 
 func (b *Buffer) Write(data []byte) (int, error) {
+	b.content.Grow(len(data))
 	b.content.Write(data)
 	b.ln()
 
@@ -46,6 +55,7 @@ func (b *Buffer) Write(data []byte) (int, error) {
 }
 
 func (b *Buffer) WriteStringLn(val string) {
+	b.content.Grow(len(val))
 	b.content.WriteString(val)
 	b.ln()
 }
@@ -72,7 +82,7 @@ func (b *Buffer) WriteText(font *font.Font, x, y meter.MM, text string) {
 }
 
 // /W [1 [100] 3 [95 83 99]]
-func (b *Buffer) WriteGlyphWidthTable(glyphs []*font.Glyph) {
+func (b *Buffer) WriteGlyphWidthTable(glyphs []font.Glyph) {
 	b.writeString("/W [")
 
 	prev := uint16(0)
@@ -101,7 +111,7 @@ func (b *Buffer) WriteGlyphWidthTable(glyphs []*font.Glyph) {
 	b.writeString("]]\n")
 }
 
-func (b *Buffer) WriteGlyphCharDictionary(glyphs []*font.Glyph) {
+func (b *Buffer) WriteGlyphCharDictionary(glyphs []font.Glyph) {
 	for chunk := range slices.Chunk(glyphs, 100) {
 		b.writeInt64(int64(len(chunk)))
 		b.writeString(" beginbfchar\n")

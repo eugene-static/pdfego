@@ -2,6 +2,7 @@ package upd
 
 import (
 	"github.com/eugene-static/pdf-craft/core"
+	"github.com/eugene-static/pdf-craft/meter"
 	tmpl "github.com/eugene-static/pdf-craft/template"
 )
 
@@ -40,52 +41,53 @@ func (upd UPD) FillTemplate(c *core.Core) ([]byte, error) {
 }
 
 func (upd UPD) titleHeader(slot *tmpl.Slot) {
-	table := slot.Table(15, 5)
+	table := slot.Table(3, []meter.MM{15, 5})
 
 	r1 := table.Row()
-	r1.Cell("Универсальный передаточный документ", tmpl.CellOpts{Height: 10, Wrap: true, Colspan: 2, Align: "LT"})
+	r1.CellWithOpts("Универсальный передаточный документ", &tmpl.CellOpts{Height: 10, Wrap: true, Colspan: 2, Align: "LT"})
 	r2 := table.Row()
-	r2.Cell("Статус", tmpl.CellOpts{Height: 4, Align: "LM"})
-	r2.Cell("1", tmpl.CellOpts{Height: 5, Align: "CM", Border: "O"})
+	r2.CellWithOpts("Статус", &tmpl.CellOpts{Height: 4, Align: "LM"})
+	r2.CellWithOpts("1", &tmpl.CellOpts{Height: 5, Align: "CM", Border: "O"})
 	r3 := table.Row()
-	r3.Cell("1 - счет-фактура и\nпередаточный\nдокумент (акт)\n2 - передаточный\nдокумент (акт)", tmpl.CellOpts{Height: 10, Align: "LB", Colspan: 2, FontSize: 5, Wrap: true})
+	r3.CellWithOpts("1 - счет-фактура и\nпередаточный\nдокумент (акт)\n2 - передаточный\nдокумент (акт)", &tmpl.CellOpts{Height: 10, Align: "LB", Colspan: 2, FontSize: 5, Wrap: true})
 }
 
 func (upd UPD) numberHeader(slot *tmpl.Slot) {
 	numbersDates := slot.Block()
 	numbers := numbersDates.Slot()
 
-	table := numbers.Table(15, 5, 20, 5, 20, 10)
+	table := numbers.Table(2, []meter.MM{15, 5, 20, 5, 20, 10})
 
-	r1 := table.Row()
-	r1.Label("Счет-фактура")
-	r1.Cell("№", tmpl.CellOpts{Align: "CB"})
-	r1.FormC(upd.SfNum, false)
-	r1.Cell("от", tmpl.CellOpts{Align: "CB"})
-	r1.FormC(upd.SfDate, false)
-	r1.Paragraph("(1)")
+	table.Row().
+		Label("Счет-фактура").
+		CellWithOpts("№", &tmpl.CellOpts{Align: "CB"}).
+		FormC(upd.SfNum, false).
+		CellWithOpts("от", &tmpl.CellOpts{Align: "CB"}).
+		FormC(upd.SfDate, false).
+		Paragraph("(1)")
 
-	r2 := table.Row()
-	r2.Label("Исправление")
-	r2.Cell("№", tmpl.CellOpts{Align: "CB"})
-	r2.FormC("", false)
-	r2.Cell("от", tmpl.CellOpts{Align: "CB"})
-	r2.FormC("", false)
-	r2.Paragraph("(1а)")
+	table.Row().
+		Label("Исправление").
+		CellWithOpts("№", &tmpl.CellOpts{Align: "CB"}).
+		FormC("", false).
+		CellWithOpts("от", &tmpl.CellOpts{Align: "CB"}).
+		FormC("", false).
+		Paragraph("(1а)")
 
 	edition := numbersDates.Slot()
 
-	table = edition.Table(190)
-	r1 = table.Row()
-	r1.Cell("Приложение № 1 к постановлению Правительства Российской Федерации от 26 декабря 2011 г. № 1137\n(в редакции постановления Правительства Российской Федерации от 16 августа 2024 г. № 1096)",
-		tmpl.CellOpts{Align: "RT", FontSize: 5, Wrap: true})
+	table = edition.Table(1, []meter.MM{190})
+
+	table.Row().
+		CellWithOpts("Приложение № 1 к постановлению Правительства Российской Федерации от 26 декабря 2011 г. № 1137\n(в редакции постановления Правительства Российской Федерации от 16 августа 2024 г. № 1096)",
+			&tmpl.CellOpts{Align: "RT", FontSize: 5, Wrap: true})
 }
 
 func (upd UPD) requisites(slot *tmpl.Slot) {
 	requisites := slot.Block(tmpl.Options{Indent: 5})
 	company := requisites.Slot()
 
-	table := company.Table(45, 80, 10)
+	table := company.Table(10, []meter.MM{45, 80, 10})
 
 	table.Row().LabelHead("Продавец:").FormL(upd.OrgPrintName, true).Paragraph("(2)")
 	table.Row().Label("Адрес:").FormL(upd.OrgPrintAddress, true).Paragraph("(2а)")
@@ -94,27 +96,27 @@ func (upd UPD) requisites(slot *tmpl.Slot) {
 	table.Row().Label("Грузополучатель и его адрес:").FormL(upd.ConsigneePrintNameAddress, false).Paragraph("(4)")
 	table.Row().Label("К платежно-расчетному документу №:").FormL(upd.PaymentAndSettlementDocument, false).Paragraph("(5)")
 	table.Row().Label("Документ об отгрузке:").FormL(upd.ShippingDocuments, true).Paragraph("(5а)")
-	table.Row().Cell(
+	table.Row().CellWithOpts(
 		"К счету-фактуре (счетам-фактурам), выставленному (выставленным)\nпри получении оплаты, частичной оплаты или иных платежей в счет\nпредстоящих поставок товаров (выполнения работ, оказания услуг),",
-		tmpl.CellOpts{Align: "LB", Wrap: true, Colspan: 2})
+		&tmpl.CellOpts{Align: "LB", Wrap: true, Colspan: 2})
 	table.Row().Label("передачи имущественных прав №:").FormL("", false)
 	table.Row().Label("исправление №:").FormL("", false).Paragraph("(5б)")
 
 	supplier := requisites.Slot()
-	table = supplier.Table(45, 80, 10)
+	table = supplier.Table(5, []meter.MM{45, 80, 10})
 
 	table.Row().LabelHead("Покупатель:").FormL(upd.SupplierPrintName, true).Paragraph("(6)")
 	table.Row().Label("Адрес:").FormL(upd.SupplierPrintAddress, true).Paragraph("(6а)")
 	table.Row().Label("ИНН/КПП покупателя:").FormL(upd.SupplierInnKpp, false).Paragraph("(6б)")
 	table.Row().Label("Валюта: наименование, код:").FormL(upd.CurrencyNameCode, false).Paragraph("(7)")
 	table.Row().
-		Cell("Идентификатор государственного контракта,\nдоговора (соглашения) (при наличии):", tmpl.CellOpts{Align: "LB", Wrap: true}).
+		CellWithOpts("Идентификатор государственного контракта,\nдоговора (соглашения) (при наличии):", &tmpl.CellOpts{Align: "LB", Wrap: true}).
 		FormL("", false).
 		Paragraph("(8)")
 }
 
 func tableHeader(slot *tmpl.Slot) {
-	table := slot.Table(21, 5, 83, 9, 7, 10, 15, 15, 20, 13, 13, 20, 20, 7, 10, 22)
+	table := slot.Table(2, []meter.MM{21, 5, 83, 9, 7, 10, 15, 15, 20, 13, 13, 20, 20, 7, 10, 22})
 
 	optsBounded := tmpl.CellOpts{
 		Height: 15,
@@ -140,33 +142,33 @@ func tableHeader(slot *tmpl.Slot) {
 	}
 
 	table.Row().
-		Cell("Код\nтовара/работ, услуг", optsBoundedRS2).
-		Cell("№\nп/п", optsBoundedRS2).
-		Cell("Наименование товара\n(описание выполненных работ, оказанных услуг),\nимущественного права", optsBoundedRS2).
-		Cell("Код\nвида\nтовара", optsBoundedRS2).
-		Cell("Единица\nизмерения", optsBoundedCS2).
-		Cell("Количество\n(объем)", optsBoundedRS2).
-		Cell("Цена\n(тариф) за\nединицу\nизмерения", optsBoundedRS2).
-		Cell("Стоимость\nтоваров (работ,\nуслуг),\nимущественных\nправ без налога -\nвсего", optsBoundedRS2).
-		Cell("В том числе\nсумма\nакциза", optsBoundedRS2).
-		Cell("Налоговая\nставка", optsBoundedRS2).
-		Cell("Сумма налога,\nпредъявляемая\nпокупателю", optsBoundedRS2).
-		Cell("Стоимость\nтоваров (работ,\nуслуг),\nимущественных\nправ с налогом -\nвсего", optsBoundedRS2).
-		Cell("Страна\nпроисхождения\nтовара", optsBoundedCS2).
-		Cell("Регистрационный\nномер декларации\nна товары или\nрегистрационный\nномер партии\nтовара,\nподлежащего\nпрослеживаемости", optsBoundedRS2)
+		CellWithOpts("Код\nтовара/работ, услуг", &optsBoundedRS2).
+		CellWithOpts("№\nп/п", &optsBoundedRS2).
+		CellWithOpts("Наименование товара\n(описание выполненных работ, оказанных услуг),\nимущественного права", &optsBoundedRS2).
+		CellWithOpts("Код\nвида\nтовара", &optsBoundedRS2).
+		CellWithOpts("Единица\nизмерения", &optsBoundedCS2).
+		CellWithOpts("Количество\n(объем)", &optsBoundedRS2).
+		CellWithOpts("Цена\n(тариф) за\nединицу\nизмерения", &optsBoundedRS2).
+		CellWithOpts("Стоимость\nтоваров (работ,\nуслуг),\nимущественных\nправ без налога -\nвсего", &optsBoundedRS2).
+		CellWithOpts("В том числе\nсумма\nакциза", &optsBoundedRS2).
+		CellWithOpts("Налоговая\nставка", &optsBoundedRS2).
+		CellWithOpts("Сумма налога,\nпредъявляемая\nпокупателю", &optsBoundedRS2).
+		CellWithOpts("Стоимость\nтоваров (работ,\nуслуг),\nимущественных\nправ с налогом -\nвсего", &optsBoundedRS2).
+		CellWithOpts("Страна\nпроисхождения\nтовара", &optsBoundedCS2).
+		CellWithOpts("Регистрационный\nномер декларации\nна товары или\nрегистрационный\nномер партии\nтовара,\nподлежащего\nпрослеживаемости", &optsBoundedRS2)
 
 	table.Row().
-		Cell("код", optsBounded).
-		Cell("условное\nобозна-\nчение\n(нацио-\nнальное)", optsBounded).
-		Cell("цифро-\nвой код", optsBounded).
-		Cell("краткое\nнаимено-\nвание", optsBounded)
+		CellWithOpts("код", &optsBounded).
+		CellWithOpts("условное\nобозна-\nчение\n(нацио-\nнальное)", &optsBounded).
+		CellWithOpts("цифро-\nвой код", &optsBounded).
+		CellWithOpts("краткое\nнаимено-\nвание", &optsBounded)
 }
 
 func tableNumberHeader(block *tmpl.Block) {
-	table := block.Slot().Table(21, 5, 83, 9, 7, 10, 15, 15, 20, 13, 13, 20, 20, 7, 10, 22)
+	table := block.Slot().Table(1, []meter.MM{21, 5, 83, 9, 7, 10, 15, 15, 20, 13, 13, 20, 20, 7, 10, 22})
 
 	table.Row().
-		Cell("А", tmpl.CellOpts{Align: "CM", Height: 3, Border: "tblR"}).
+		CellWithOpts("А", &tmpl.CellOpts{Align: "CM", Height: 3, Border: "tblR"}).
 		Bounded("1").
 		Bounded("1а").
 		Bounded("1б").
@@ -185,23 +187,23 @@ func tableNumberHeader(block *tmpl.Block) {
 }
 
 func tableDetails(block *tmpl.Block, item Detail) {
-	table := block.Slot().Table(21, 5, 83, 9, 7, 10, 15, 15, 20, 13, 13, 20, 20, 7, 10, 22)
+	table := block.Slot().Table(1, []meter.MM{21, 5, 83, 9, 7, 10, 15, 15, 20, 13, 13, 20, 20, 7, 10, 22})
 
 	table.Row().
-		Cell(item.Code, tmpl.CellOpts{Align: "CB", Border: "tblR"}).
-		Cell(item.Number, tmpl.CellOpts{Align: "CB", Border: "o"}).
-		Cell(item.Title, tmpl.CellOpts{Align: "LB", Border: "o", Wrap: true}).
-		Cell("", tmpl.CellOpts{Align: "CB", Border: "o"}).
-		Cell(item.OkeiID, tmpl.CellOpts{Align: "RB", Border: "o"}).
-		Cell(item.OkeiCode, tmpl.CellOpts{Align: "LB", Border: "o"}).
-		Cell(item.Quantity, tmpl.CellOpts{Align: "RB", Border: "o"}).
-		Cell(item.Price, tmpl.CellOpts{Align: "RB", Border: "o"}).
-		Cell(item.AmountWithoutVat, tmpl.CellOpts{Align: "RB", Border: "o"}).
-		Cell(item.Excise, tmpl.CellOpts{Align: "RB", Border: "o"}).
-		Cell(item.Vat, tmpl.CellOpts{Align: "RB", Border: "o"}).
-		Cell(item.AmountVat, tmpl.CellOpts{Align: "RB", Border: "o"}).
-		Cell(item.AmountWithVat, tmpl.CellOpts{Align: "RB", Border: "o"}).
-		Cell(item.CountryID, tmpl.CellOpts{Align: "RB", Border: "o"}).
-		Cell(item.CountryName, tmpl.CellOpts{Align: "LB", Border: "o"}).
-		Cell(item.Gtd, tmpl.CellOpts{Align: "LB", Border: "o"})
+		CellWithOpts(item.Code, &tmpl.CellOpts{Align: "CB", Border: "tblR"}).
+		CellWithOpts(item.Number, &tmpl.CellOpts{Align: "CB", Border: "o"}).
+		CellWithOpts(item.Title, &tmpl.CellOpts{Align: "LB", Border: "o", Wrap: true}).
+		CellWithOpts("", &tmpl.CellOpts{Align: "CB", Border: "o"}).
+		CellWithOpts(item.OkeiID, &tmpl.CellOpts{Align: "RB", Border: "o"}).
+		CellWithOpts(item.OkeiCode, &tmpl.CellOpts{Align: "LB", Border: "o"}).
+		CellWithOpts(item.Quantity, &tmpl.CellOpts{Align: "RB", Border: "o"}).
+		CellWithOpts(item.Price, &tmpl.CellOpts{Align: "RB", Border: "o"}).
+		CellWithOpts(item.AmountWithoutVat, &tmpl.CellOpts{Align: "RB", Border: "o"}).
+		CellWithOpts(item.Excise, &tmpl.CellOpts{Align: "RB", Border: "o"}).
+		CellWithOpts(item.Vat, &tmpl.CellOpts{Align: "RB", Border: "o"}).
+		CellWithOpts(item.AmountVat, &tmpl.CellOpts{Align: "RB", Border: "o"}).
+		CellWithOpts(item.AmountWithVat, &tmpl.CellOpts{Align: "RB", Border: "o"}).
+		CellWithOpts(item.CountryID, &tmpl.CellOpts{Align: "RB", Border: "o"}).
+		CellWithOpts(item.CountryName, &tmpl.CellOpts{Align: "LB", Border: "o"}).
+		CellWithOpts(item.Gtd, &tmpl.CellOpts{Align: "LB", Border: "o"})
 }

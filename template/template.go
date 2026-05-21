@@ -22,12 +22,16 @@ type Template struct {
 type Block struct {
 	core    *core.Core
 	profile byte
+	w       meter.MM
+	h       meter.MM
 	slots   []*Slot
 	opts    Options
 }
 
 type Slot struct {
 	core      *core.Core
+	w         meter.MM
+	h         meter.MM
 	renderers []renderer
 }
 
@@ -84,6 +88,8 @@ func (t *Template) EndHeader(options ...Options) *Block {
 }
 
 func (t *Template) Render() {
+	t.core.StartDocument()
+
 	buf := t.core.AddPage()
 	page := t.core.Page()
 	x0, y0 := page.X0Y0()
@@ -109,17 +115,19 @@ func (t *Template) Render() {
 		}
 
 		if (page.Margin() + y + height) > 0 {
-			buf = t.core.AddPage()
+			t.core.WritePage()
+			t.core.AddPage()
 			x = x0
 			y = y0 + headerHeight
 		}
 
 		block.render(buf, x, y+block.opts.Indent)
+		block = nil
 
 		y += height
 	}
 
-	t.core.FillBuffer()
+	t.core.FinishDocument()
 }
 
 func (t *Template) Bytes() []byte {
@@ -155,6 +163,7 @@ func (b *Block) Add(blockFunc func(*Block)) *Block {
 }
 
 func Repeat[T any](tmpl *Template, items []T, blockFunc func(b *Block, item T)) {
+	tmpl.blocks = slices.Grow(tmpl.blocks, len(items))
 	for i := range items {
 		b := tmpl.Block()
 		blockFunc(b, items[i])
@@ -170,24 +179,29 @@ func (b *Block) render(buf *buffer.Buffer, x, y meter.MM) {
 }
 
 func (b *Block) height() meter.MM {
-	heights := make([]meter.MM, 0, len(b.slots))
+	if b.h == 0 {
+		heights := make([]meter.MM, 0, len(b.slots))
 
-	for i := range b.slots {
-		heights = append(heights, b.slots[i].height())
+		for i := range b.slots {
+			heights = append(heights, b.slots[i].height())
+		}
+
+		b.h = slices.Max(heights) + b.opts.Indent
 	}
 
-	//return slices.Max(heights)
-	return slices.Max(heights) + b.opts.Indent
+	return b.h
 }
 
 func (b *Block) width() meter.MM {
-	width := spacing(b.opts.Spacing, len(b.slots))
+	if b.w == 0 {
+		for i := range b.slots {
+			b.w += b.slots[i].width()
+		}
 
-	for i := range b.slots {
-		width += b.slots[i].width()
+		b.w += spacing(b.opts.Spacing, len(b.slots))
 	}
 
-	return width
+	return b.w
 }
 
 func (b *Block) options() Options {
@@ -210,15 +224,18 @@ func (s *Slot) Block(options ...Options) *Block {
 	return &block
 }
 
-func (s *Slot) Table(column meter.MM, columns ...meter.MM) *Table {
-	cols := make([]meter.MM, len(columns)+1)
-	cols[0] = column
-	copy(cols[1:], columns)
+func (s *Slot) Table(rowsNum int, columns []meter.MM) *Table {
+	columnsNum := len(columns)
 
 	table := Table{
-		core:    s.core,
-		columns: cols,
+		core:      s.core,
+		columns:   columns,
+		rows:      make([]Row, rowsNum),
+		cellsPool: make([]cell, rowsNum*columnsNum),
+		rowspans:  make([]uint8, columnsNum),
 	}
+
+	s.core.IncreaseCellsCount(rowsNum * columnsNum)
 
 	s.renderers = append(s.renderers, &table)
 
@@ -244,23 +261,23 @@ func (s *Slot) render(buf *buffer.Buffer, x, y meter.MM) {
 }
 
 func (s *Slot) height() meter.MM {
-	height := meter.MM(0)
-
-	for i := range s.renderers {
-		height += s.renderers[i].height()
+	if s.h == 0 {
+		for i := range s.renderers {
+			s.h += s.renderers[i].height()
+		}
 	}
 
-	return height
+	return s.h
 }
 
 func (s *Slot) width() meter.MM {
-	width := meter.MM(0.0)
-
-	for i := range s.renderers {
-		width += s.renderers[i].width()
+	if s.w == 0 {
+		for i := range s.renderers {
+			s.w += s.renderers[i].width()
+		}
 	}
 
-	return width
+	return s.w
 }
 
 func spacing(sp meter.MM, arrLen int) meter.MM {

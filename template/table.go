@@ -3,8 +3,6 @@ package template
 import (
 	"log/slog"
 	"slices"
-	"strings"
-	"unicode"
 
 	"github.com/eugene-static/pdf-craft/buffer"
 	"github.com/eugene-static/pdf-craft/core"
@@ -12,96 +10,128 @@ import (
 	"github.com/eugene-static/pdf-craft/meter"
 )
 
+const (
+	borderLeft   uint8                                                 = 1 << iota // 0000 0001 (1)
+	borderRight                                                                    // 0000 0010 (2)
+	borderTop                                                                      // 0000 0100 (4)
+	borderBottom                                                                   // 0000 1000 (8)
+	thickLeft                                                                      // 0001 0000 (16)
+	thickRight                                                                     // 0010 0000 (32)
+	thickTop                                                                       // 0100 0000 (64)
+	thickBottom                                                                    // 1000 0000 (128)
+	borderAll    = borderLeft | borderRight | borderTop | borderBottom             // 0000 1111 (15)
+	thickAll     = thickLeft | thickRight | thickTop | thickBottom                 // 1111 0000 (240)
+)
+
+const (
+	alignL uint8 = iota
+	alignC
+	alignR
+	alignT
+	alignM
+	alignB
+)
+
 type Table struct {
-	core    *core.Core
-	columns []meter.MM
-	rows    []*Row
-	opts    Options
+	core      *core.Core
+	columns   []meter.MM
+	rows      []Row
+	cellsPool []cell
+	segBuffer []font.Segment
+	rowspans  []uint8
+	rowIndex  uint8
+	w         meter.MM
+	h         meter.MM
+	opts      Options
 }
 
 func (t *Table) Row() *Row {
-	row := t.newRow()
+	if int(t.rowIndex) > len(t.rows) {
+		return &Row{}
+	}
 
-	t.rows = append(t.rows, row)
+	r := &t.rows[t.rowIndex]
 
-	return row
+	t.newRow(r)
+
+	t.rowIndex++
+
+	return r
 }
 
 func (t *Table) Add(rowFunc func(t *Table)) {
 	rowFunc(t)
 }
 
-func (t *Table) newRow() *Row {
+func (t *Table) newRow(row *Row) {
 	columnsLen := len(t.columns)
-	cells := make([]cell, columnsLen)
-	rowspans := make([]int, columnsLen)
+	rowspans := t.rowspans
 
-	rowsLen := len(t.rows)
-
-	if rowsLen > 0 {
-		copy(rowspans, t.rows[rowsLen-1].decrementRowSpans())
+	if t.rowIndex > 0 {
+		t.rows[t.rowIndex-1].decrementRowSpans()
 	}
 
-	r := &Row{
-		core:       t.core,
-		height:     meter.FontHeight(t.core.DefaultFontSize()),
-		columns:    t.columns,
-		columnsLen: columnsLen,
-		cells:      cells,
-		rowspans:   rowspans,
-		buffer:     make([]font.Segment, 0, 20),
-	}
-
-	return r
+	row.core = t.core
+	row.height = meter.FontHeight(t.core.DefaultFontSize())
+	row.columns = t.columns
+	row.columnsLen = uint8(columnsLen)
+	row.cells = t.cellsPool[int(t.rowIndex)*columnsLen : int(t.rowIndex)*columnsLen+columnsLen]
+	row.rowspans = rowspans
+	row.segBuffer = t.segBuffer
 }
 
 func (t *Table) render(buf *buffer.Buffer, x, y meter.MM) {
 	height := meter.MM(0.0)
 
-	for rowIndex, row := range t.rows {
+	for ri := range t.rows {
+		x0 := x
 		y0 := y + height
-		height += row.height
+		height += t.rows[ri].height
 
-		cellX := x
+		for ci := range t.rows[ri].cells {
+			t.rows[ri].cells[ci].x = x0
+			t.rows[ri].cells[ci].y = y0
+			x0 += t.columns[ci]
 
-		for i, c := range row.cells {
-			c.x = cellX
-			c.y = y0
-			cellX += t.columns[i]
-
-			if !c.busy {
+			if !t.rows[ri].cells[ci].busy {
 				continue
 			}
 
-			c.height = t.cellHeight(rowIndex, c.rowspan)
+			t.rows[ri].cells[ci].height = t.cellHeight(uint8(ri), t.rows[ri].cells[ci].rowspan)
 
-			c.render(buf)
+			t.rows[ri].cells[ci].render(buf)
 		}
 	}
 }
 
-func (t *Table) height() (h meter.MM) {
-	for i := range t.rows {
-		h += t.rows[i].height
+func (t *Table) height() meter.MM {
+	if t.h == 0 {
+		for i := range t.rows {
+			t.h += t.rows[i].height
+		}
+
+		t.h += t.opts.Indent
 	}
 
-	return h + t.options().Indent
+	return t.h
 }
 
-func (t *Table) width() (w meter.MM) {
-	for i := range t.columns {
-		w += t.columns[i]
+func (t *Table) width() meter.MM {
+	if t.w == 0 {
+		for i := range t.columns {
+			t.w += t.columns[i]
+		}
 	}
 
-	return w
+	return t.w
 }
 
 func (t *Table) options() Options {
 	return t.opts
 }
 
-func (t *Table) cellHeight(rowIndex, rowspan int) (h meter.MM) {
-	for i := rowIndex; i < min(len(t.rows), rowIndex+rowspan); i++ {
+func (t *Table) cellHeight(ri, rowspan uint8) (h meter.MM) {
+	for i := ri; i < uint8(len(t.rows)) && i < ri+rowspan; i++ {
 		h += t.rows[i].height
 	}
 
@@ -110,33 +140,32 @@ func (t *Table) cellHeight(rowIndex, rowspan int) (h meter.MM) {
 
 type Row struct {
 	core        *core.Core
-	height      meter.MM
 	cells       []cell
-	rowspans    []int
 	columns     []meter.MM
-	buffer      []font.Segment
-	columnIndex int
-	columnsLen  int
+	rowspans    []uint8
+	segBuffer   []font.Segment
+	height      meter.MM
+	columnIndex uint8
+	columnsLen  uint8
 }
 
-func (r *Row) Cell(text string, opts ...CellOpts) *Row {
-	var opt CellOpts
-
-	if opts != nil {
-		opt = opts[0]
-	}
-
+func (r *Row) CellWithOpts(text string, opts *CellOpts) *Row {
 	r.setColIndex()
 
 	if r.columnIndex > r.columnsLen {
 		//TODO: error to prevent panic
 	}
 
-	c := r.newCell(text, opt)
+	c := &r.cells[r.columnIndex]
 
-	r.cells[r.columnIndex] = c
+	r.newCell(c, text, opts)
 
-	calcHeight := meter.FontHeight(c.fontSize) * meter.MM(len(c.text))
+	linesLen := 1
+	if len(c.textWrapped) > 1 {
+		linesLen = len(c.textWrapped)
+	}
+
+	calcHeight := meter.FontHeight(c.fontSize) * meter.MM(linesLen)
 
 	r.setHeight(c.height, calcHeight)
 
@@ -145,32 +174,36 @@ func (r *Row) Cell(text string, opts ...CellOpts) *Row {
 	return r
 }
 
+func (r *Row) Cell(text string) *Row {
+	return r.CellWithOpts(text, nil)
+}
+
 func (r *Row) Label(text string) *Row {
-	return r.Cell(text, CellOpts{Align: "LB"})
+	return r.CellWithOpts(text, &CellOpts{Align: "LB"})
 }
 
 func (r *Row) LabelHead(text string) *Row {
-	return r.Cell(text, CellOpts{Align: "LB", Font: core.FontBold})
+	return r.CellWithOpts(text, &CellOpts{Align: "LB", Font: core.FontBold})
 }
 
 func (r *Row) FormL(text string, wrapText bool) *Row {
-	return r.Cell(text, CellOpts{Align: "LB", Border: "b", Wrap: wrapText})
+	return r.CellWithOpts(text, &CellOpts{Align: "LB", Border: "b", Wrap: wrapText})
 }
 
 func (r *Row) FormC(text string, wrapText bool) *Row {
-	return r.Cell(text, CellOpts{Align: "CB", Border: "b", Wrap: wrapText})
+	return r.CellWithOpts(text, &CellOpts{Align: "CB", Border: "b", Wrap: wrapText})
 }
 
 func (r *Row) Paragraph(text string) *Row {
-	return r.Cell(text, CellOpts{Align: "CB"})
+	return r.CellWithOpts(text, &CellOpts{Align: "CB"})
 }
 
 func (r *Row) Underscore(text string) *Row {
-	return r.Cell(text, CellOpts{Align: "CT", FontSize: r.core.DefaultFontSize().Sub(1)})
+	return r.CellWithOpts(text, &CellOpts{Align: "CT", FontSize: r.core.DefaultFontSize().Sub(1)})
 }
 
 func (r *Row) Bounded(text string) *Row {
-	return r.Cell(text, CellOpts{Align: "CM", Border: "o", Wrap: true})
+	return r.CellWithOpts(text, &CellOpts{Align: "CM", Border: "o", Wrap: true})
 }
 
 func (r *Row) Debug() {
@@ -187,61 +220,31 @@ func (r *Row) Debug() {
 	)
 }
 
-func (r *Row) newCell(text string, opts CellOpts) cell {
-	c := cell{
-		core:       r.core,
-		height:     opts.Height,
-		text:       []font.Segment{font.NewSegment(text, 0)},
-		font:       r.core.Font(core.FontRegular),
-		fontSize:   r.core.DefaultFontSize(),
-		border:     opts.Border,
-		borderSize: r.core.BorderThin(),
-		align:      "CM",
-		colspan:    1,
-		rowspan:    1,
-		busy:       true,
-	}
+func (r *Row) newCell(c *cell, text string, opts *CellOpts) {
+	c.font = r.core.Font(core.FontRegular)
+	c.fontSize = r.core.DefaultFontSize()
+	c.borderSize = r.core.BorderThin()
+	c.alignH = alignC
+	c.alignV = alignM
+	c.colspan = 1
+	c.rowspan = 1
+	c.busy = true
 
-	if opts.Font != "" {
-		c.font = r.core.Font(strings.ToUpper(opts.Font))
-	}
-
-	if opts.FontSize > 0 {
-		c.fontSize = opts.FontSize
-	}
-
-	if opts.BorderSize > 0 {
-		c.borderSize = meter.PT(opts.BorderSize)
-	}
-
-	if opts.Align != "" {
-		c.align = opts.Align
-	}
-
-	if opts.Colspan > 1 {
-		c.colspan = opts.Colspan
-	}
-
-	if opts.Rowspan > 1 {
-		c.rowspan = opts.Rowspan
-	}
+	c.setOpts(r.core, opts)
 
 	c.width = r.cellWidth(c.colspan)
 
-	c.font.SaveRunes(text)
-
-	if opts.Wrap {
-		split := c.font.SplitTextOptimized(r.buffer, text, c.fontSize, c.width)
-
-		c.text = split
+	if c.wrapped {
+		c.textWrapped = c.font.SplitText(text, c.fontSize, c.width, r.segBuffer)
+	} else {
+		c.textWrapped = c.textSpace[:1]
+		c.textWrapped[0] = c.font.FullText(text, c.fontSize)
 	}
-
-	return c
 }
 
 func (r *Row) width() (w float64) {
-	for _, c := range r.cells {
-		w += c.width.Float64()
+	for i := range r.cells {
+		w += r.cells[i].width.Float64()
 	}
 
 	return w
@@ -260,8 +263,8 @@ func (r *Row) setHeight(optsHeight, calcHeight meter.MM) {
 }
 
 // Ширина ячейки равна сумме ширин всех колонок, которые она занимает.
-func (r *Row) cellWidth(colspan int) (w meter.MM) {
-	for i := r.columnIndex; i < min(r.columnsLen, r.columnIndex+colspan); i++ {
+func (r *Row) cellWidth(colspan uint8) (w meter.MM) {
+	for i := r.columnIndex; i < r.columnsLen && i < r.columnIndex+colspan; i++ {
 		w += r.columns[i]
 	}
 
@@ -277,7 +280,7 @@ func (r *Row) setColIndex() {
 
 // Каждая ячейка имеет свой colspan > 0. Если colspan > 1, то пропущенным ячейкам тоже необходимо присвоить rowspan этой ячейки.
 // Сдвигаем курсор к следующей ячейке.
-func (r *Row) updateIndexes(colspan, rowspan int) {
+func (r *Row) updateIndexes(colspan, rowspan uint8) {
 	shift := r.columnIndex + colspan
 
 	for i := r.columnIndex; i < min(shift, r.columnsLen); i++ {
@@ -287,46 +290,125 @@ func (r *Row) updateIndexes(colspan, rowspan int) {
 }
 
 // При создании новой строки уменьшаем все rowspan на 1.
-func (r *Row) decrementRowSpans() []int {
+func (r *Row) decrementRowSpans() {
 	for i := range r.rowspans {
-		r.rowspans[i]--
+		if r.rowspans[i] > 0 {
+			r.rowspans[i]--
+		}
 	}
-
-	return r.rowspans
 }
 
 type cell struct {
-	core       *core.Core
-	x          meter.MM
-	y          meter.MM
-	width      meter.MM
-	height     meter.MM
-	colspan    int
-	rowspan    int
-	font       *font.Font
-	fontSize   meter.PT
-	border     string
-	borderSize meter.PT
-	align      string
-	text       []font.Segment
-	busy       bool
+	font        *font.Font
+	textWrapped []font.Segment
+	textSpace   [1]font.Segment
+	x           meter.MM
+	y           meter.MM
+	width       meter.MM
+	height      meter.MM
+	fontSize    meter.PT
+	borderSize  meter.PT
+	colspan     uint8
+	rowspan     uint8
+	borderMask  uint8
+	alignH      uint8
+	alignV      uint8
+	wrapped     bool
+	busy        bool
 }
 
 type CellOpts struct {
 	Height     meter.MM
-	Colspan    int
-	Rowspan    int
+	Colspan    uint8
+	Rowspan    uint8
 	Align      string
 	Border     string
-	BorderSize float64
+	BorderSize meter.PT
 	Font       string
 	FontSize   meter.PT
 	Wrap       bool
 }
 
+func (c *cell) setOpts(core *core.Core, opts *CellOpts) {
+	if opts == nil {
+		return
+	}
+
+	c.height = opts.Height
+	c.wrapped = opts.Wrap
+
+	if opts.Font != "" {
+		c.font = core.Font(opts.Font)
+	}
+
+	if opts.FontSize > 0 {
+		c.fontSize = opts.FontSize
+	}
+
+	if opts.BorderSize > 0 {
+		c.borderSize = opts.BorderSize
+	}
+
+	if opts.Colspan > 1 {
+		c.colspan = opts.Colspan
+	}
+
+	if opts.Rowspan > 1 {
+		c.rowspan = opts.Rowspan
+	}
+
+	if opts.Align != "" {
+		for _, alg := range opts.Align {
+			switch alg {
+			case 'L':
+				c.alignH = alignL
+			case 'C':
+				c.alignH = alignC
+			case 'R':
+				c.alignH = alignR
+			case 'T':
+				c.alignV = alignT
+			case 'M':
+				c.alignV = alignM
+			case 'B':
+				c.alignV = alignB
+			default:
+				//c.alignV = alignM
+			}
+		}
+	}
+
+	if opts.Border != "" {
+		for _, b := range opts.Border {
+			switch b {
+			case 'o':
+				c.borderMask |= borderAll
+			case 'O':
+				c.borderMask |= borderAll | thickAll
+			case 'l':
+				c.borderMask |= borderLeft
+			case 'L':
+				c.borderMask |= borderLeft | thickLeft
+			case 'r':
+				c.borderMask |= borderRight
+			case 'R':
+				c.borderMask |= borderRight | thickRight
+			case 't':
+				c.borderMask |= borderTop
+			case 'T':
+				c.borderMask |= borderTop | thickTop
+			case 'b':
+				c.borderMask |= borderBottom
+			case 'B':
+				c.borderMask |= borderBottom | thickBottom
+			}
+		}
+	}
+}
+
 func (c *cell) textSegments() []string {
 	return slices.Collect(func(yield func(text string) bool) {
-		for _, t := range c.text {
+		for _, t := range c.textWrapped {
 			yield(t.Text())
 		}
 	})
@@ -334,68 +416,103 @@ func (c *cell) textSegments() []string {
 
 // BT /[FontAlias] [FontSize] Tf 1 0 0 1 [X] [Y] Tm <[TextHex]> Tj ET
 func (c *cell) render(buf *buffer.Buffer) {
-	if len(c.text) == 0 {
+	if c.borderMask != 0 {
+		c.renderBorder(buf)
+	}
+
+	if len(c.textWrapped) == 0 {
 		return
 	}
 
 	buf.WriteStringLn("BT")
 	buf.WriteFont(c.font.Alias(), c.fontSize)
 
-	for i, seg := range c.text {
-		dx := c.textDx(c.font, seg)
-		dy := c.textDy(i)
+	for i := range c.textWrapped {
+		dx := c.textDx(c.font, c.textWrapped[i])
+
+		var lenLines = meter.MM(1)
+
+		if len(c.textWrapped) > 1 {
+			lenLines = meter.MM(len(c.textWrapped))
+		}
+
+		dy := c.textDy(i, lenLines)
 
 		x := c.x + dx
 		y := c.y + dy
 
-		buf.WriteText(c.font, x, y, seg.Text())
+		buf.WriteText(c.font, x, y, c.textWrapped[i].Text())
 	}
 
 	buf.WriteStringLn("ET")
-
-	if c.border != "" {
-		c.renderBorder(buf)
-	}
 }
 
 func (c *cell) renderBorder(buf *buffer.Buffer) {
-	bs := c.borderSize
+	var x0, y0, x1, y1 meter.MM
 
-	for _, b := range c.border {
-		if unicode.IsUpper(b) {
-			bs = c.core.BorderThick()
+	if c.borderMask&borderAll == borderAll && (c.borderMask^borderAll == thickAll || c.borderMask^borderAll == 0) {
+		bs := c.borderSize
+		if c.borderMask&thickAll == thickAll {
+			bs *= 4
 		}
 
-		var x0, y0, x1, y1 meter.MM
+		buf.WriteRect(bs, c.x, c.y, c.width, c.height)
 
-		switch b {
-		case 'o', 'O':
-			buf.WriteRect(bs, c.x, c.y, c.width, c.height)
+		return
+	}
 
-			return
-		case 't', 'T':
-			x0 = c.x
-			y0 = c.y
-			x1 = c.x + c.width
-			y1 = c.y
-		case 'r', 'R':
-			x0 = c.x + c.width
-			y0 = c.y
-			x1 = x0
-			y1 = c.y + c.height
-		case 'b', 'B':
-			x0 = c.x
-			y0 = c.y + c.height
-			x1 = c.x + c.width
-			y1 = y0
-		case 'l', 'L':
-			x0 = c.x
-			y0 = c.y
-			x1 = x0
-			y1 = c.y + c.height
-		default:
-			continue
+	if c.borderMask&borderLeft != 0 {
+		bs := c.borderSize
+		if c.borderMask&thickLeft != 0 {
+			bs *= 4
 		}
+
+		x0 = c.x
+		y0 = c.y
+		x1 = x0
+		y1 = c.y + c.height
+
+		buf.WriteLine(bs, x0, y0, x1, y1)
+	}
+
+	if c.borderMask&borderRight != 0 {
+		bs := c.borderSize
+		if c.borderMask&thickRight != 0 {
+			bs *= 4
+		}
+
+		x0 = c.x + c.width
+		y0 = c.y
+		x1 = x0
+		y1 = c.y + c.height
+
+		buf.WriteLine(bs, x0, y0, x1, y1)
+	}
+
+	if c.borderMask&borderTop != 0 {
+		bs := c.borderSize
+		if c.borderMask&thickTop != 0 {
+			bs *= 4
+		}
+
+		x0 = c.x
+		y0 = c.y
+		x1 = c.x + c.width
+		y1 = c.y
+
+		buf.WriteLine(bs, x0, y0, x1, y1)
+	}
+
+	if c.borderMask&borderBottom != 0 {
+		bs := c.borderSize
+		if c.borderMask&thickBottom != 0 {
+			bs *= 4
+		}
+
+		x0 = c.x
+		y0 = c.y + c.height
+		x1 = c.x + c.width
+		y1 = y0
 
 		buf.WriteLine(bs, x0, y0, x1, y1)
 	}
@@ -405,13 +522,14 @@ func (c *cell) textDx(f *font.Font, seg font.Segment) (dx meter.MM) {
 	textWidth := seg.Width()
 
 	if textWidth == 0 {
-		textWidth = f.MeasureText(c.fontSize, seg.Text()).MM()
+		text := []rune(seg.Text())
+		textWidth = f.MeasureText(c.fontSize, text, 0, len(text)).MM()
 	}
 
-	switch {
-	case strings.ContainsRune(c.align, 'R'):
+	switch c.alignH {
+	case alignR:
 		dx = c.width - textWidth - 0.2
-	case strings.ContainsRune(c.align, 'C'):
+	case alignC:
 		dx = (c.width - textWidth) / 2
 	default:
 		// чтобы текст не прилипал к границе
@@ -421,8 +539,7 @@ func (c *cell) textDx(f *font.Font, seg font.Segment) (dx meter.MM) {
 	return dx
 }
 
-func (c *cell) textDy(index int) (dy meter.MM) {
-	lenLines := meter.MM(len(c.text))
+func (c *cell) textDy(index int, lenLines meter.MM) (dy meter.MM) {
 	fontHeight := c.fontSize.MM()
 
 	k := meter.MM(0.3)
@@ -432,10 +549,10 @@ func (c *cell) textDy(index int) (dy meter.MM) {
 	// Поэтому для верного позиционирования шрифта нам необходимо добавить еще одну высоту строки.
 	baseLineDy := meter.MM(index+1) * fontHeight
 
-	switch {
-	case strings.ContainsRune(c.align, 'B'):
+	switch c.alignV {
+	case alignB:
 		dy = c.height - lenLines*fontHeight - k
-	case strings.ContainsRune(c.align, 'M'):
+	case alignM:
 		dy = (c.height - lenLines*fontHeight) / 2
 	default:
 		dy = k

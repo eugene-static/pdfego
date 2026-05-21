@@ -7,10 +7,8 @@ import (
 	"maps"
 	"os"
 	"slices"
-	"strings"
 
 	"github.com/eugene-static/pdf-craft/meter"
-	"github.com/go-text/typesetting/shaping"
 	"golang.org/x/image/font/sfnt"
 	"golang.org/x/image/math/fixed"
 )
@@ -26,7 +24,6 @@ type Font struct {
 	rawData        []byte
 	compressedData []byte
 	manager        fontManager
-	shaper         shaper
 	metrics        Metrics
 }
 
@@ -57,22 +54,11 @@ type Metrics struct {
 }
 
 type fontManager struct {
-	glyphsCache map[rune]*Glyph
-	glyphs      []*Glyph
-	dirtyFlag   bool
-}
-
-type shaper struct {
-	shaper shaping.Shaper
-	input  shaping.Input
-}
-
-func defaultGlyph() *Glyph {
-	return &Glyph{
-		rune:    '□',
-		index:   0,
-		advance: 600,
-	}
+	textBuffer     []rune
+	glyphsCache    map[rune]Glyph
+	glyphFastCache []Glyph
+	glyphs         []Glyph
+	dirtyFlag      bool
 }
 
 func NewFont(path, alias string) (*Font, error) {
@@ -167,7 +153,8 @@ func NewFont(path, alias string) (*Font, error) {
 		rawData: fontBytes,
 		metrics: metrics,
 		manager: fontManager{
-			glyphsCache: make(map[rune]*Glyph),
+			glyphsCache:    make(map[rune]Glyph),
+			glyphFastCache: make([]Glyph, 1200),
 		},
 	}
 
@@ -187,12 +174,12 @@ func (f *Font) GID(r rune) uint16 {
 	return uint16(gl.index)
 }
 
-func (f *Font) Glyphs() []*Glyph {
+func (f *Font) Glyphs() []Glyph {
 	if !f.manager.dirtyFlag {
 		return f.manager.glyphs
 	}
 
-	glyphs := slices.SortedFunc(maps.Values(f.manager.glyphsCache), func(g *Glyph, g2 *Glyph) int {
+	glyphs := slices.SortedFunc(maps.Values(f.manager.glyphsCache), func(g Glyph, g2 Glyph) int {
 		return cmp.Compare(g.index, g2.index)
 	})
 
@@ -243,105 +230,134 @@ func compress(data []byte) ([]byte, error) {
 	return b.Bytes(), nil
 }
 
-func (f *Font) SaveRunes(text string) {
-	for _, r := range text {
-		_, ok := f.manager.glyphsCache[r]
-		if ok {
-			continue
-		}
-
-		if r == '\n' {
-			continue
-		}
-
-		buf := new(sfnt.Buffer)
-
-		gid, _ := f.face.GlyphIndex(buf, r) //err is always nil
-
-		adv, err := f.face.GlyphAdvance(buf, gid, f.metrics.Ppem, hintingNone)
-		if err != nil {
-			adv = 600
-		}
-
-		f.manager.addGlyph(r, gid, adv)
-
-		f.manager.dirtyFlag = true
+func (f *Font) saveRune(r rune) {
+	if r < 1200 && f.manager.glyphFastCache[r].rune > 0 {
+		return
 	}
+
+	_, ok := f.manager.glyphsCache[r]
+	if ok {
+		return
+	}
+
+	if r == '\n' {
+		return
+	}
+
+	buf := new(sfnt.Buffer)
+
+	gid, _ := f.face.GlyphIndex(buf, r) //err is always nil
+
+	adv, err := f.face.GlyphAdvance(buf, gid, f.metrics.Ppem, hintingNone)
+	if err != nil {
+		adv = 600
+	}
+
+	f.manager.addGlyph(r, gid, adv)
+
+	f.manager.dirtyFlag = true
 }
 
-func (f *Font) MeasureText(fontSize meter.PT, text string) meter.PT {
-	var (
-		advance fixed.Int26_6
-	)
+func (f *Font) MeasureText(fontSize meter.PT, text []rune, start, end int) meter.PT {
+	if start < 0 || end > len(text) || start >= end {
+		return meter.PT(0)
+	}
+
+	var advance fixed.Int26_6
+
+	for i := start; i < end; i++ {
+		if text[i] < 1200 && f.manager.glyphFastCache[text[i]].advance > 0 {
+			advance += f.manager.glyphFastCache[text[i]].advance
+		} else {
+			gl, ok := f.manager.glyphsCache[text[i]]
+			if !ok {
+				advance += 600
+			}
+
+			advance += gl.advance
+		}
+	}
 
 	fontSizeEm := fontSize.FixedI()
-
-	for _, c := range text {
-		gl, ok := f.manager.glyphsCache[c]
-		if !ok {
-			gl = defaultGlyph()
-		}
-
-		advance += gl.advance.Mul(fontSizeEm)
-	}
+	advance = advance.Mul(fontSizeEm)
 
 	width := meter.PT(float64(advance) / float64(f.metrics.Ppem))
 
 	return width
 }
 
-func (f *Font) SplitText(text string, size meter.PT, width meter.MM) []Segment {
-	lines := make([]Segment, 0)
+func (f *Font) FullText(text string, size meter.PT) Segment {
+	f.manager.textBuffer = f.manager.textBuffer[:0]
 
-	for seg := range strings.Lines(text) {
-		lines = slices.Concat(lines, f.splitSegment(seg, size, width))
+	for _, r := range text {
+		f.manager.textBuffer = append(f.manager.textBuffer, r)
+		f.saveRune(r)
 	}
 
-	return lines
+	textWidth := f.MeasureText(size, f.manager.textBuffer, 0, len(text))
+
+	return Segment{
+		text:  text,
+		width: textWidth.MM(),
+	}
 }
 
-func (f *Font) SplitTextOptimized(buf []Segment, text string, size meter.PT, width meter.MM) []Segment {
-	segments := make([]Segment, 0)
+func (f *Font) SplitText(text string, size meter.PT, width meter.MM, buf []Segment) []Segment {
+	segments := buf[:0]
+	f.manager.textBuffer = f.manager.textBuffer[:0]
 	targetWidth := width.PT()
 
-	start := 0
-	for start < len(text) && (text[start] == ' ' || text[start] == '\t' || text[start] == '\n' || text[start] == '\r') {
-		start++
+	for _, r := range text {
+		f.manager.textBuffer = append(f.manager.textBuffer, r)
+		f.saveRune(r)
 	}
 
-	if start >= len(text) {
-		return segments
+	start := 0
+	for start < len(f.manager.textBuffer) && !f.manager.wrapSymbols(start) {
+		start++
 	}
 
 	lineStart := 0
 	lineEnd := start
-	textWidth := f.MeasureText(size, text[:lineEnd])
+	textWidth := f.MeasureText(size, f.manager.textBuffer, lineStart, lineEnd)
 
-	for i := start; i < len(text); {
-		for i < len(text) && (text[i] == ' ' || text[i] == '\t' || text[i] == '\n' || text[i] == '\r') {
+	if start >= len(f.manager.textBuffer) {
+		segments = append(segments, Segment{
+			text:  string(f.manager.textBuffer),
+			width: textWidth.MM(),
+		})
+
+		return segments
+	}
+
+	if cap(segments) < 10 {
+		segments = slices.Grow(segments, 10)
+	}
+
+	for i := start; i < len(f.manager.textBuffer); {
+		for i < len(f.manager.textBuffer) && f.manager.wrapSymbols(i) {
 			i++
 		}
 
 		wordStart := i
-		for i < len(text) && !(text[i] == ' ' || text[i] == '\t' || text[i] == '\n' || text[i] == '\r') {
+
+		for i < len(f.manager.textBuffer) && !f.manager.wrapSymbols(i) {
 			i++
 		}
 
 		wordEnd := i
 
-		candidate := text[lineStart:wordEnd]
-		candidateWidth := f.MeasureText(size, candidate)
+		candidateWidth := f.MeasureText(size, f.manager.textBuffer, lineStart, wordEnd)
 
-		if candidateWidth > targetWidth || text[lineEnd] == '\n' {
-			currentLine := strings.Clone(text[lineStart:lineEnd])
-
+		if candidateWidth > targetWidth || f.manager.textBuffer[lineEnd] == '\n' {
 			segments = append(segments, Segment{
-				text:  currentLine,
+				text:  string(f.manager.textBuffer[lineStart:lineEnd]),
 				width: textWidth.MM(),
 			})
 
 			lineStart = wordStart
 			lineEnd = wordEnd
+			textWidth = candidateWidth - textWidth
 
 			continue
 		}
@@ -350,50 +366,14 @@ func (f *Font) SplitTextOptimized(buf []Segment, text string, size meter.PT, wid
 		textWidth = candidateWidth
 	}
 
-	if lineStart < len(text) {
-		lastLine := strings.Clone(text[lineStart:lineEnd])
-		lineWidth := f.MeasureText(size, lastLine)
+	if lineStart < len(f.manager.textBuffer) {
+		lineWidth := f.MeasureText(size, f.manager.textBuffer, lineStart, lineEnd)
 
 		segments = append(segments, Segment{
-			text:  lastLine,
+			text:  string(f.manager.textBuffer[lineStart:lineEnd]),
 			width: lineWidth.MM(),
 		})
 	}
-
-	return segments
-}
-
-func (f *Font) splitSegment(text string, size meter.PT, width meter.MM) []Segment {
-	words := strings.Fields(text)
-
-	segments := make([]Segment, 0, len(words))
-
-	line := words[0]
-	textWidth := meter.PT(0)
-
-	for _, word := range words[1:] {
-		candidate := line + " " + word
-
-		candidateWidth := f.MeasureText(size, candidate)
-		if candidateWidth > width.PT() {
-			segments = append(segments, Segment{
-				text:  line,
-				width: textWidth.MM(),
-			})
-
-			line = word
-
-			continue
-		}
-
-		textWidth = candidateWidth
-		line = candidate
-	}
-
-	segments = append(segments, Segment{
-		text:  line,
-		width: textWidth.MM(),
-	})
 
 	return segments
 }
@@ -411,9 +391,26 @@ func (g *Glyph) Advance() int64 {
 }
 
 func (mgr *fontManager) addGlyph(r rune, gid sfnt.GlyphIndex, advance fixed.Int26_6) {
-	mgr.glyphsCache[r] = &Glyph{
+	if r < 1200 {
+		mgr.glyphFastCache[r].rune = uint16(r)
+		mgr.glyphFastCache[r].index = gid
+		mgr.glyphFastCache[r].advance = advance
+		mgr.glyphsCache[r] = mgr.glyphFastCache[r]
+
+		return
+	}
+
+	mgr.glyphsCache[r] = Glyph{
 		rune:    uint16(r),
 		index:   gid,
 		advance: advance,
 	}
+}
+
+func (mgr *fontManager) wrapSymbols(index int) bool {
+	if index >= len(mgr.textBuffer) {
+		return false
+	}
+
+	return mgr.textBuffer[index] == ' ' || mgr.textBuffer[index] == '\t' || mgr.textBuffer[index] == '\n' || mgr.textBuffer[index] == '\r'
 }

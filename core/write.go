@@ -14,8 +14,12 @@ const (
 	resourcesObjNum = 2
 )
 
-func (core *Core) FillBuffer() {
+func (core *Core) StartDocument() {
 	core.writeFileHeader()
+}
+
+func (core *Core) FinishDocument() {
+	core.WritePage()
 	core.writePages()
 	core.writeResources()
 
@@ -100,7 +104,7 @@ func (core *Core) writeFont(f *font.Font) int64 {
 	b.WriteFieldInt("/Length", cMapB.Len())
 	b.CloseObjectParameters()
 	b.StartStream()
-	b.WriteFrom(cMapB)
+	b.ReadFrom(cMapB)
 	b.EndStream()
 	b.EndObj()
 
@@ -161,6 +165,7 @@ func (core *Core) writeFont(f *font.Font) int64 {
 
 	data, l, err := f.Data()
 	if err != nil {
+		// TODO: errors
 		core.log.Debug("error reading data from font", slog.String("err", err.Error()))
 	}
 
@@ -179,14 +184,6 @@ func (core *Core) writeFont(f *font.Font) int64 {
 }
 
 func (core *Core) writePages() {
-	pageObjs := make([]int64, 0, len(core.pageBuffers))
-
-	for _, buf := range core.pageBuffers {
-		pageObj := core.writePage(buf)
-
-		pageObjs = append(pageObjs, pageObj)
-	}
-
 	b := core.mainBuffer
 
 	core.setObject(pagesObjNum)
@@ -194,14 +191,14 @@ func (core *Core) writePages() {
 	b.StartObj(pagesObjNum)
 	b.OpenObjectParameters()
 	b.WriteFieldString("/Type", "/Pages")
-	b.WriteRefArray("/Kids", pageObjs)
-	b.WriteFieldInt("/Count", len(pageObjs))
+	b.WriteRefArray("/Kids", core.pageObjs)
+	b.WriteFieldInt("/Count", len(core.pageObjs))
 	b.WriteFieldFloatArray("/MediaBox", []float64{0, 0, core.page.width.PT().Float64(), core.page.height.PT().Float64()})
 	b.CloseObjectParameters()
 	b.EndObj()
 }
 
-func (core *Core) writePage(buf *buffer.Buffer) int64 {
+func (core *Core) WritePage() {
 	b := core.mainBuffer
 	pageObjNum := core.newObject()
 
@@ -218,14 +215,15 @@ func (core *Core) writePage(buf *buffer.Buffer) int64 {
 
 	b.StartObj(objNum)
 	b.OpenObjectParameters()
-	b.WriteFieldInt("/Length", buf.Len())
+	b.WriteFieldInt("/Length", core.pageBuffer.Len())
 	b.CloseObjectParameters()
 	b.StartStream()
-	b.WriteFrom(buf)
+	b.ReadFrom(core.pageBuffer)
 	b.EndStream()
 	b.EndObj()
 
-	return pageObjNum
+	core.pageObjs = append(core.pageObjs, pageObjNum)
+	core.pageBuffer.Reset()
 }
 
 func (core *Core) writeFileHeader() {

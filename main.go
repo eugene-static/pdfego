@@ -29,7 +29,7 @@ func main() {
 		log.Fatal(err)
 	}
 
-	upd := upd.NewUPD(10000)
+	upd := upd.NewUPD(1)
 
 	bytes, err := upd.FillTemplate(c)
 	if err != nil {

@@ -28,15 +28,11 @@ func (core *Core) SetMargin(margin float64) {
 }
 
 func (core *Core) AddPage() *buffer.Buffer {
-	buf := buffer.New()
-
 	if core.headBuffer != nil && core.headBuffer.Len() > 0 {
-		buf.Write(core.headBuffer.Bytes())
+		core.pageBuffer.Write(core.headBuffer.Bytes())
 	}
 
-	core.pageBuffers = append(core.pageBuffers, buf)
-
-	return buf
+	return core.pageBuffer
 }
 
 func (core *Core) AddHeader() *buffer.Buffer {

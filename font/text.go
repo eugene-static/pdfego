@@ -3,9 +3,8 @@ package font
 import "github.com/eugene-static/pdf-craft/meter"
 
 type Segment struct {
-	text   string
-	width  meter.MM
-	shifts []int
+	text  string
+	width meter.MM
 }
 
 func NewSegment(text string, width meter.MM) Segment {
