@@ -266,16 +266,24 @@ func (f *Font) MeasureText(fontSize meter.PT, text []rune, start, end int) meter
 	var advance fixed.Int26_6
 
 	for i := start; i < end; i++ {
-		if text[i] < 1200 && f.manager.glyphFastCache[text[i]].advance > 0 {
-			advance += f.manager.glyphFastCache[text[i]].advance
-		} else {
-			gl, ok := f.manager.glyphsCache[text[i]]
-			if !ok {
-				advance += 600
-			}
+		char := text[i]
 
-			advance += gl.advance
+		if char < 1200 {
+			gl := f.manager.glyphFastCache[char]
+
+			if gl.advance > 0 {
+				advance += gl.advance
+				continue
+			}
 		}
+
+		gl, ok := f.manager.glyphsCache[text[i]]
+		if !ok {
+			advance += 600
+			continue
+		}
+
+		advance += gl.advance
 	}
 
 	fontSizeEm := fontSize.FixedI()

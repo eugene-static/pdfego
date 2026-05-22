@@ -4,6 +4,7 @@ import (
 	"log"
 	"log/slog"
 	"os"
+	"runtime"
 	"time"
 
 	"github.com/eugene-static/pdf-craft/core"
@@ -29,7 +30,9 @@ func main() {
 		log.Fatal(err)
 	}
 
-	upd := upd.NewUPD(1)
+	upd := upd.NewUPD(2)
+
+	var m runtime.MemStats
 
 	bytes, err := upd.FillTemplate(c)
 	if err != nil {
@@ -37,6 +40,11 @@ func main() {
 	}
 
 	log.Printf("duration: %v\n", time.Since(t))
+
+	runtime.ReadMemStats(&m)
+	peakMegabytes := float64(m.HeapInuse) / (1024 * 1024)
+
+	log.Printf("[INFO] Пиковое потребление памяти в куче: %.2f MB\n", peakMegabytes)
 
 	output, err := os.Create("output.pdf")
 	if err != nil {

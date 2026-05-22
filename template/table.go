@@ -80,30 +80,6 @@ func (t *Table) newRow(row *Row) {
 	row.segBuffer = t.segBuffer
 }
 
-func (t *Table) render(buf *buffer.Buffer, x, y meter.MM) {
-	height := meter.MM(0.0)
-
-	for ri := range t.rows {
-		x0 := x
-		y0 := y + height
-		height += t.rows[ri].height
-
-		for ci := range t.rows[ri].cells {
-			t.rows[ri].cells[ci].x = x0
-			t.rows[ri].cells[ci].y = y0
-			x0 += t.columns[ci]
-
-			if !t.rows[ri].cells[ci].busy {
-				continue
-			}
-
-			t.rows[ri].cells[ci].height = t.cellHeight(uint8(ri), t.rows[ri].cells[ci].rowspan)
-
-			t.rows[ri].cells[ci].render(buf)
-		}
-	}
-}
-
 func (t *Table) height() meter.MM {
 	if t.h == 0 {
 		for i := range t.rows {

@@ -1,8 +1,6 @@
 package template
 
 import (
-	"slices"
-
 	"github.com/eugene-static/pdf-craft/buffer"
 	core "github.com/eugene-static/pdf-craft/core"
 	"github.com/eugene-static/pdf-craft/meter"
@@ -15,23 +13,43 @@ const (
 )
 
 type Template struct {
-	core   *core.Core
-	blocks []*Block
+	core         *core.Core
+	buf          *buffer.Buffer
+	page         core.Page
+	block        *Block
+	headerHeight meter.MM
+	x0           meter.MM
+	y0           meter.MM
+	x            meter.MM
+	y            meter.MM
 }
 
 type Block struct {
-	core    *core.Core
 	profile byte
+	core    *core.Core
+	buf     *buffer.Buffer
+	x0      meter.MM
+	y0      meter.MM
+	x       meter.MM
+	y       meter.MM
 	w       meter.MM
 	h       meter.MM
 	slots   []*Slot
+	slotV2  *Slot
 	opts    Options
 }
 
 type Slot struct {
-	core      *core.Core
-	w         meter.MM
-	h         meter.MM
+	core     *core.Core
+	buf      *buffer.Buffer
+	x        meter.MM
+	y        meter.MM
+	w        meter.MM
+	h        meter.MM
+	renderer renderer
+	block    *Block
+	table    *Table
+
 	renderers []renderer
 }
 
@@ -49,8 +67,18 @@ type renderer interface {
 }
 
 func New(core *core.Core) *Template {
+	core.StartDocument()
+	page := core.Page()
+	x0, y0 := page.X0Y0()
+
 	return &Template{
 		core: core,
+		buf:  core.AddPage(),
+		page: page,
+		x0:   x0,
+		y0:   y0,
+		x:    x0,
+		y:    y0,
 	}
 }
 
@@ -60,7 +88,7 @@ func (t *Template) Block(options ...Options) *Block {
 		opts = options[0]
 	}
 
-	block := t.block(defaultBlock, opts)
+	block := t.newBlock(defaultBlock, opts)
 
 	return block
 }
@@ -71,7 +99,7 @@ func (t *Template) Header(options ...Options) *Block {
 		opts = options[0]
 	}
 
-	block := t.block(headerBlock, opts)
+	block := t.newBlock(headerBlock, opts)
 
 	return block
 }
@@ -82,68 +110,13 @@ func (t *Template) EndHeader(options ...Options) *Block {
 		opts = options[0]
 	}
 
-	block := t.block(headerStopBlock, opts)
+	block := t.newBlock(headerStopBlock, opts)
 
 	return block
 }
 
-func (t *Template) Render() {
-	t.core.StartDocument()
-
-	buf := t.core.AddPage()
-	page := t.core.Page()
-	x0, y0 := page.X0Y0()
-	x, y := x0, y0
-	headerHeight := meter.MM(0)
-
-	for _, block := range t.blocks {
-		height := block.height()
-
-		switch block.profile {
-		case headerBlock:
-			headerBuf := t.core.AddHeader()
-
-			block.render(headerBuf, x0, y0)
-
-			headerHeight = height
-		case headerStopBlock:
-			t.core.RemoveHeader()
-
-			headerHeight = 0
-		default:
-			//
-		}
-
-		if (page.Margin() + y + height) > 0 {
-			t.core.WritePage()
-			t.core.AddPage()
-			x = x0
-			y = y0 + headerHeight
-		}
-
-		block.render(buf, x, y+block.opts.Indent)
-		block = nil
-
-		y += height
-	}
-
-	t.core.FinishDocument()
-}
-
 func (t *Template) Bytes() []byte {
 	return t.core.Bytes()
-}
-
-func (t *Template) block(profile byte, options Options) *Block {
-	block := Block{
-		core:    t.core,
-		profile: profile,
-		opts:    options,
-	}
-
-	t.blocks = append(t.blocks, &block)
-
-	return &block
 }
 
 func (b *Block) Slot() *Slot {
@@ -163,43 +136,26 @@ func (b *Block) Add(blockFunc func(*Block)) *Block {
 }
 
 func Repeat[T any](tmpl *Template, items []T, blockFunc func(b *Block, item T)) {
-	tmpl.blocks = slices.Grow(tmpl.blocks, len(items))
 	for i := range items {
 		b := tmpl.Block()
 		blockFunc(b, items[i])
 	}
 }
 
-func (b *Block) render(buf *buffer.Buffer, x, y meter.MM) {
-	for i := range b.slots {
-		b.slots[i].render(buf, x, y)
-
-		x += b.slots[i].width() + b.opts.Spacing
-	}
-}
-
 func (b *Block) height() meter.MM {
-	if b.h == 0 {
-		heights := make([]meter.MM, 0, len(b.slots))
+	sh := b.slotV2.height()
 
-		for i := range b.slots {
-			heights = append(heights, b.slots[i].height())
-		}
-
-		b.h = slices.Max(heights) + b.opts.Indent
+	if sh > b.h {
+		b.h = sh
 	}
 
 	return b.h
 }
 
 func (b *Block) width() meter.MM {
-	if b.w == 0 {
-		for i := range b.slots {
-			b.w += b.slots[i].width()
-		}
+	sw := b.slotV2.width()
 
-		b.w += spacing(b.opts.Spacing, len(b.slots))
-	}
+	b.w += sw + b.opts.Spacing
 
 	return b.w
 }
@@ -248,34 +204,14 @@ func (s *Slot) Add(slotFunc func(s *Slot)) *Slot {
 	return s
 }
 
-func (s *Slot) render(buf *buffer.Buffer, x, y meter.MM) {
-	for i := range s.renderers {
-		opts := s.renderers[i].options()
-
-		y += opts.Indent
-
-		s.renderers[i].render(buf, x, y)
-
-		y += s.renderers[i].height()
-	}
-}
-
 func (s *Slot) height() meter.MM {
-	if s.h == 0 {
-		for i := range s.renderers {
-			s.h += s.renderers[i].height()
-		}
-	}
+	s.h += s.renderer.height()
 
 	return s.h
 }
 
 func (s *Slot) width() meter.MM {
-	if s.w == 0 {
-		for i := range s.renderers {
-			s.w += s.renderers[i].width()
-		}
-	}
+	s.w += s.renderer.width()
 
 	return s.w
 }

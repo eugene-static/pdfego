@@ -12,28 +12,28 @@ func (upd UPD) FillTemplate(c *core.Core) ([]byte, error) {
 	headBlock := template.Block(tmpl.Options{Spacing: 3})
 
 	headBlock.
-		Slot().
+		SlotV2().
 		Add(upd.titleHeader)
 
 	headBlock.
-		Slot().
-		Add(upd.numberHeader).
-		Add(upd.requisites)
+		SlotV2().
+		Add(upd.numberHeader)
+	//Add(upd.requisites)
 
-	template.
-		Block(tmpl.Options{Indent: 5}).
-		Slot().
-		Add(tableHeader)
-
-	template.
-		Header().
-		Add(tableNumberHeader)
-
-	tmpl.Repeat(
-		template,
-		upd.Details,
-		tableDetails,
-	)
+	//template.
+	//	Block(tmpl.Options{Indent: 5}).
+	//	SlotV2().
+	//	Add(tableHeader)
+	//
+	//template.
+	//	Block().
+	//	Add(tableNumberHeader)
+	//
+	//tmpl.Repeat(
+	//	template,
+	//	upd.Details,
+	//	tableDetails,
+	//)
 
 	template.Render()
 
@@ -41,7 +41,7 @@ func (upd UPD) FillTemplate(c *core.Core) ([]byte, error) {
 }
 
 func (upd UPD) titleHeader(slot *tmpl.Slot) {
-	table := slot.Table(3, []meter.MM{15, 5})
+	table := slot.TableV2(3, []meter.MM{15, 5})
 
 	r1 := table.Row()
 	r1.CellWithOpts("Универсальный передаточный документ", &tmpl.CellOpts{Height: 10, Wrap: true, Colspan: 2, Align: "LT"})
@@ -53,10 +53,10 @@ func (upd UPD) titleHeader(slot *tmpl.Slot) {
 }
 
 func (upd UPD) numberHeader(slot *tmpl.Slot) {
-	numbersDates := slot.Block()
-	numbers := numbersDates.Slot()
+	numbersDates := slot.BlockV2()
+	numbers := numbersDates.SlotV2()
 
-	table := numbers.Table(2, []meter.MM{15, 5, 20, 5, 20, 10})
+	table := numbers.TableV2(2, []meter.MM{15, 5, 20, 5, 20, 10})
 
 	table.Row().
 		Label("Счет-фактура").
@@ -74,9 +74,9 @@ func (upd UPD) numberHeader(slot *tmpl.Slot) {
 		FormC("", false).
 		Paragraph("(1а)")
 
-	edition := numbersDates.Slot()
+	edition := numbersDates.SlotV2()
 
-	table = edition.Table(1, []meter.MM{190})
+	table = edition.TableV2(1, []meter.MM{190})
 
 	table.Row().
 		CellWithOpts("Приложение № 1 к постановлению Правительства Российской Федерации от 26 декабря 2011 г. № 1137\n(в редакции постановления Правительства Российской Федерации от 16 августа 2024 г. № 1096)",
@@ -84,10 +84,10 @@ func (upd UPD) numberHeader(slot *tmpl.Slot) {
 }
 
 func (upd UPD) requisites(slot *tmpl.Slot) {
-	requisites := slot.Block(tmpl.Options{Indent: 5})
-	company := requisites.Slot()
+	requisites := slot.BlockV2(tmpl.Options{Indent: 5})
+	company := requisites.SlotV2()
 
-	table := company.Table(10, []meter.MM{45, 80, 10})
+	table := company.TableV2(10, []meter.MM{45, 80, 10})
 
 	table.Row().LabelHead("Продавец:").FormL(upd.OrgPrintName, true).Paragraph("(2)")
 	table.Row().Label("Адрес:").FormL(upd.OrgPrintAddress, true).Paragraph("(2а)")
@@ -102,8 +102,8 @@ func (upd UPD) requisites(slot *tmpl.Slot) {
 	table.Row().Label("передачи имущественных прав №:").FormL("", false)
 	table.Row().Label("исправление №:").FormL("", false).Paragraph("(5б)")
 
-	supplier := requisites.Slot()
-	table = supplier.Table(5, []meter.MM{45, 80, 10})
+	supplier := requisites.SlotV2()
+	table = supplier.TableV2(5, []meter.MM{45, 80, 10})
 
 	table.Row().LabelHead("Покупатель:").FormL(upd.SupplierPrintName, true).Paragraph("(6)")
 	table.Row().Label("Адрес:").FormL(upd.SupplierPrintAddress, true).Paragraph("(6а)")
@@ -116,7 +116,7 @@ func (upd UPD) requisites(slot *tmpl.Slot) {
 }
 
 func tableHeader(slot *tmpl.Slot) {
-	table := slot.Table(2, []meter.MM{21, 5, 83, 9, 7, 10, 15, 15, 20, 13, 13, 20, 20, 7, 10, 22})
+	table := slot.TableV2(2, []meter.MM{21, 5, 83, 9, 7, 10, 15, 15, 20, 13, 13, 20, 20, 7, 10, 22})
 
 	optsBounded := tmpl.CellOpts{
 		Height: 15,
@@ -165,7 +165,7 @@ func tableHeader(slot *tmpl.Slot) {
 }
 
 func tableNumberHeader(block *tmpl.Block) {
-	table := block.Slot().Table(1, []meter.MM{21, 5, 83, 9, 7, 10, 15, 15, 20, 13, 13, 20, 20, 7, 10, 22})
+	table := block.SlotV2().TableV2(1, []meter.MM{21, 5, 83, 9, 7, 10, 15, 15, 20, 13, 13, 20, 20, 7, 10, 22})
 
 	table.Row().
 		CellWithOpts("А", &tmpl.CellOpts{Align: "CM", Height: 3, Border: "tblR"}).
@@ -187,7 +187,7 @@ func tableNumberHeader(block *tmpl.Block) {
 }
 
 func tableDetails(block *tmpl.Block, item Detail) {
-	table := block.Slot().Table(1, []meter.MM{21, 5, 83, 9, 7, 10, 15, 15, 20, 13, 13, 20, 20, 7, 10, 22})
+	table := block.SlotV2().TableV2(1, []meter.MM{21, 5, 83, 9, 7, 10, 15, 15, 20, 13, 13, 20, 20, 7, 10, 22})
 
 	table.Row().
 		CellWithOpts(item.Code, &tmpl.CellOpts{Align: "CB", Border: "tblR"}).
