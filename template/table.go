@@ -34,14 +34,18 @@ const (
 
 type Table struct {
 	core      *core.Core
+	buf       *buffer.Buffer
+	x         meter.MM
+	y         meter.MM
+	w         meter.MM
+	h         meter.MM
 	columns   []meter.MM
 	rows      []Row
 	cellsPool []cell
 	segBuffer []font.Segment
 	rowspans  []uint8
 	rowIndex  uint8
-	w         meter.MM
-	h         meter.MM
+	isPrinted bool
 	opts      Options
 }
 

@@ -53,7 +53,19 @@ func main() {
 
 	defer output.Close()
 
+	outputText, err := os.Create("output_text.txt")
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	defer outputText.Close()
+
 	_, err = output.Write(bytes)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	_, err = outputText.Write(bytes)
 	if err != nil {
 		log.Fatal(err)
 	}

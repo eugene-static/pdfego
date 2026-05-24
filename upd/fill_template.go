@@ -17,8 +17,8 @@ func (upd UPD) FillTemplate(c *core.Core) ([]byte, error) {
 
 	headBlock.
 		SlotV2().
-		Add(upd.numberHeader)
-	//Add(upd.requisites)
+		Add(upd.numberHeader).
+		Add(upd.requisites)
 
 	//template.
 	//	Block(tmpl.Options{Indent: 5}).

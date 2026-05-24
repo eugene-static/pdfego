@@ -40,17 +40,17 @@ type Block struct {
 }
 
 type Slot struct {
-	core     *core.Core
-	buf      *buffer.Buffer
-	x        meter.MM
-	y        meter.MM
-	w        meter.MM
-	h        meter.MM
-	renderer renderer
-	block    *Block
-	table    *Table
+	core    *core.Core
+	buf     *buffer.Buffer
+	x       meter.MM
+	y       meter.MM
+	w       meter.MM
+	h       meter.MM
+	printer printer
+	block   *Block
+	table   *Table
 
-	renderers []renderer
+	renderers []printer
 }
 
 type Options struct {
@@ -59,8 +59,8 @@ type Options struct {
 	Ledge   meter.MM
 }
 
-type renderer interface {
-	render(b *buffer.Buffer, x, y meter.MM)
+type printer interface {
+	print(x, y meter.MM)
 	height() meter.MM
 	width() meter.MM
 	options() Options
@@ -155,7 +155,7 @@ func (b *Block) height() meter.MM {
 func (b *Block) width() meter.MM {
 	sw := b.slotV2.width()
 
-	b.w += sw + b.opts.Spacing
+	b.w = sw + b.opts.Spacing
 
 	return b.w
 }
@@ -205,13 +205,13 @@ func (s *Slot) Add(slotFunc func(s *Slot)) *Slot {
 }
 
 func (s *Slot) height() meter.MM {
-	s.h += s.renderer.height()
+	s.h = s.printer.height()
 
 	return s.h
 }
 
 func (s *Slot) width() meter.MM {
-	s.w += s.renderer.width()
+	s.w = s.printer.width()
 
 	return s.w
 }
