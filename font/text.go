@@ -7,13 +7,6 @@ type Segment struct {
 	width meter.MM
 }
 
-func NewSegment(text string, width meter.MM) Segment {
-	return Segment{
-		text:  text,
-		width: width,
-	}
-}
-
 func (s *Segment) Text() string {
 	return s.text
 }

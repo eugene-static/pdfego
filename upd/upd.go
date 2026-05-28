@@ -47,7 +47,8 @@ type UPD struct {
 
 	OrgSignImage string
 
-	Details []Detail
+	Details        []Detail
+	DetailsOrdered []string
 }
 
 type Detail struct {
@@ -127,7 +128,33 @@ func NewUPD(detailsNum int) UPD {
 		DocReceiveDate:               "",
 		OrgSignImage:                 "/1691194.png",
 		Details:                      details,
+		DetailsOrdered:               make([]string, len(details)),
 	}
 
 	return upd
+}
+
+func (upd UPD) OrderedRow(index int) []string {
+	upd.DetailsOrdered[0] = upd.Details[index].Number
+	upd.DetailsOrdered[1] = upd.Details[index].Code
+	upd.DetailsOrdered[2] = upd.Details[index].Title
+	upd.DetailsOrdered[3] = upd.Details[index].KindID
+	upd.DetailsOrdered[4] = upd.Details[index].OkeiID
+	upd.DetailsOrdered[5] = upd.Details[index].OkeiCode
+	upd.DetailsOrdered[6] = upd.Details[index].Quantity
+	upd.DetailsOrdered[7] = upd.Details[index].Price
+	upd.DetailsOrdered[8] = upd.Details[index].AmountWithoutVat
+	upd.DetailsOrdered[9] = upd.Details[index].Excise
+	upd.DetailsOrdered[10] = upd.Details[index].Vat
+	upd.DetailsOrdered[11] = upd.Details[index].AmountVat
+	upd.DetailsOrdered[12] = upd.Details[index].AmountWithVat
+	upd.DetailsOrdered[13] = upd.Details[index].CountryID
+	upd.DetailsOrdered[14] = upd.Details[index].CountryName
+	upd.DetailsOrdered[15] = upd.Details[index].Gtd
+
+	return upd.DetailsOrdered
+}
+
+func (upd UPD) Len() int {
+	return len(upd.Details)
 }

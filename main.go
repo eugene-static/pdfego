@@ -30,7 +30,7 @@ func main() {
 		log.Fatal(err)
 	}
 
-	upd := upd.NewUPD(2)
+	upd := upd.NewUPD(20)
 
 	var m runtime.MemStats
 

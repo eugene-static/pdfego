@@ -34,11 +34,6 @@ const (
 
 type Table struct {
 	core      *core.Core
-	buf       *buffer.Buffer
-	x         meter.MM
-	y         meter.MM
-	w         meter.MM
-	h         meter.MM
 	columns   []meter.MM
 	rows      []Row
 	cellsPool []cell
@@ -47,6 +42,49 @@ type Table struct {
 	rowIndex  uint8
 	isPrinted bool
 	opts      Options
+}
+
+type Row struct {
+	core        *core.Core
+	cells       []cell
+	columns     []meter.MM
+	rowspans    []uint8
+	segBuffer   []font.Segment
+	height      meter.MM
+	columnIndex uint8
+	columnsLen  uint8
+}
+
+type cell struct {
+	id          uint8
+	font        *font.Font
+	textWrapped []font.Segment
+	textSpace   [1]font.Segment
+	width       meter.MM
+	height      meter.MM
+	fontSize    meter.PT
+	borderSize  meter.PT
+	borderMask  uint8
+	colspan     uint8
+	rowspan     uint8
+	alignH      uint8
+	alignV      uint8
+	wrapped     bool
+	static      bool
+	busy        bool
+}
+
+type CellOpts struct {
+	ID         uint8
+	Colspan    uint8
+	Rowspan    uint8
+	Align      string
+	Border     string
+	Font       string
+	Height     meter.MM
+	BorderSize meter.PT
+	FontSize   meter.PT
+	Wrap       bool
 }
 
 func (t *Table) Row() *Row {
@@ -84,30 +122,22 @@ func (t *Table) newRow(row *Row) {
 	row.segBuffer = t.segBuffer
 }
 
-func (t *Table) height() meter.MM {
-	if t.h == 0 {
-		for i := range t.rows {
-			t.h += t.rows[i].height
-		}
-
-		t.h += t.opts.Indent
+func (t *Table) height() (h meter.MM) {
+	for i := range t.rows {
+		h += t.rows[i].height
 	}
 
-	return t.h
+	h += t.opts.Indent
+
+	return h
 }
 
-func (t *Table) width() meter.MM {
-	if t.w == 0 {
-		for i := range t.columns {
-			t.w += t.columns[i]
-		}
+func (t *Table) width() (w meter.MM) {
+	for i := range t.columns {
+		w += t.columns[i]
 	}
 
-	return t.w
-}
-
-func (t *Table) options() Options {
-	return t.opts
+	return w
 }
 
 func (t *Table) cellHeight(ri, rowspan uint8) (h meter.MM) {
@@ -116,17 +146,6 @@ func (t *Table) cellHeight(ri, rowspan uint8) (h meter.MM) {
 	}
 
 	return h
-}
-
-type Row struct {
-	core        *core.Core
-	cells       []cell
-	columns     []meter.MM
-	rowspans    []uint8
-	segBuffer   []font.Segment
-	height      meter.MM
-	columnIndex uint8
-	columnsLen  uint8
 }
 
 func (r *Row) CellWithOpts(text string, opts *CellOpts) *Row {
@@ -140,14 +159,9 @@ func (r *Row) CellWithOpts(text string, opts *CellOpts) *Row {
 
 	r.newCell(c, text, opts)
 
-	linesLen := 1
-	if len(c.textWrapped) > 1 {
-		linesLen = len(c.textWrapped)
-	}
+	calcHeight := meter.FontHeight(c.fontSize) * meter.MM(len(c.textWrapped)) //TODO: r.core.FontHeight()
 
-	calcHeight := meter.FontHeight(c.fontSize) * meter.MM(linesLen)
-
-	r.setHeight(c.height, calcHeight)
+	r.setHeight(c.height, calcHeight, c.static)
 
 	r.updateIndexes(c.colspan, c.rowspan)
 
@@ -230,14 +244,27 @@ func (r *Row) width() (w float64) {
 	return w
 }
 
+func (r *Row) updateCell(c *cell, text string) {
+	if c.wrapped {
+		c.textWrapped = c.font.SplitText(text, c.fontSize, c.width, r.segBuffer)
+	} else {
+		c.textWrapped = c.textSpace[:1]
+		c.textWrapped[0] = c.font.FullText(text, c.fontSize)
+	}
+
+	calcHeight := meter.FontHeight(c.fontSize) * meter.MM(len(c.textWrapped))
+
+	r.setHeight(c.height, calcHeight, c.static)
+}
+
 // Поле cell.height должно быть равно высоте строки, но пока все ячейки не будут созданы, мы не знаем итоговую высоту строки.
 // Поэтому высота ячейки будет определяться в методе render().
-func (r *Row) setHeight(optsHeight, calcHeight meter.MM) {
+func (r *Row) setHeight(optsHeight, calcHeight meter.MM, static bool) {
 	if calcHeight > r.height {
 		r.height = calcHeight
 	}
 
-	if optsHeight > 0 {
+	if static && optsHeight > r.height {
 		r.height = optsHeight
 	}
 }
@@ -278,44 +305,15 @@ func (r *Row) decrementRowSpans() {
 	}
 }
 
-type cell struct {
-	font        *font.Font
-	textWrapped []font.Segment
-	textSpace   [1]font.Segment
-	x           meter.MM
-	y           meter.MM
-	width       meter.MM
-	height      meter.MM
-	fontSize    meter.PT
-	borderSize  meter.PT
-	colspan     uint8
-	rowspan     uint8
-	borderMask  uint8
-	alignH      uint8
-	alignV      uint8
-	wrapped     bool
-	busy        bool
-}
-
-type CellOpts struct {
-	Height     meter.MM
-	Colspan    uint8
-	Rowspan    uint8
-	Align      string
-	Border     string
-	BorderSize meter.PT
-	Font       string
-	FontSize   meter.PT
-	Wrap       bool
-}
-
 func (c *cell) setOpts(core *core.Core, opts *CellOpts) {
 	if opts == nil {
 		return
 	}
 
-	c.height = opts.Height
+	c.id = opts.ID
 	c.wrapped = opts.Wrap
+	c.height = opts.Height
+	c.static = opts.Height > 0
 
 	if opts.Font != "" {
 		c.font = core.Font(opts.Font)
@@ -395,9 +393,9 @@ func (c *cell) textSegments() []string {
 }
 
 // BT /[FontAlias] [FontSize] Tf 1 0 0 1 [X] [Y] Tm <[TextHex]> Tj ET
-func (c *cell) render(buf *buffer.Buffer) {
+func (c *cell) render(buf *buffer.Buffer, x, y meter.MM) {
 	if c.borderMask != 0 {
-		c.renderBorder(buf)
+		c.renderBorder(buf, x, y)
 	}
 
 	if len(c.textWrapped) == 0 {
@@ -418,16 +416,16 @@ func (c *cell) render(buf *buffer.Buffer) {
 
 		dy := c.textDy(i, lenLines)
 
-		x := c.x + dx
-		y := c.y + dy
+		cx := x + dx
+		cy := y + dy
 
-		buf.WriteText(c.font, x, y, c.textWrapped[i].Text())
+		buf.WriteText(c.font, cx, cy, c.textWrapped[i].Text())
 	}
 
 	buf.WriteStringLn("ET")
 }
 
-func (c *cell) renderBorder(buf *buffer.Buffer) {
+func (c *cell) renderBorder(buf *buffer.Buffer, x, y meter.MM) {
 	var x0, y0, x1, y1 meter.MM
 
 	if c.borderMask&borderAll == borderAll && (c.borderMask^borderAll == thickAll || c.borderMask^borderAll == 0) {
@@ -436,7 +434,7 @@ func (c *cell) renderBorder(buf *buffer.Buffer) {
 			bs *= 4
 		}
 
-		buf.WriteRect(bs, c.x, c.y, c.width, c.height)
+		buf.WriteRect(bs, x, y, c.width, c.height)
 
 		return
 	}
@@ -447,10 +445,10 @@ func (c *cell) renderBorder(buf *buffer.Buffer) {
 			bs *= 4
 		}
 
-		x0 = c.x
-		y0 = c.y
+		x0 = x
+		y0 = y
 		x1 = x0
-		y1 = c.y + c.height
+		y1 = y + c.height
 
 		buf.WriteLine(bs, x0, y0, x1, y1)
 	}
@@ -461,10 +459,10 @@ func (c *cell) renderBorder(buf *buffer.Buffer) {
 			bs *= 4
 		}
 
-		x0 = c.x + c.width
-		y0 = c.y
+		x0 = x + c.width
+		y0 = y
 		x1 = x0
-		y1 = c.y + c.height
+		y1 = y + c.height
 
 		buf.WriteLine(bs, x0, y0, x1, y1)
 	}
@@ -475,10 +473,10 @@ func (c *cell) renderBorder(buf *buffer.Buffer) {
 			bs *= 4
 		}
 
-		x0 = c.x
-		y0 = c.y
-		x1 = c.x + c.width
-		y1 = c.y
+		x0 = x
+		y0 = y
+		x1 = x + c.width
+		y1 = y
 
 		buf.WriteLine(bs, x0, y0, x1, y1)
 	}
@@ -489,9 +487,9 @@ func (c *cell) renderBorder(buf *buffer.Buffer) {
 			bs *= 4
 		}
 
-		x0 = c.x
-		y0 = c.y + c.height
-		x1 = c.x + c.width
+		x0 = x
+		y0 = y + c.height
+		x1 = x + c.width
 		y1 = y0
 
 		buf.WriteLine(bs, x0, y0, x1, y1)
