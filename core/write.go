@@ -40,11 +40,11 @@ func (core *Core) writeResources() {
 
 	fontResources := make([]fontResource, 0, len(core.fonts))
 
-	for _, f := range core.fonts {
-		fontObjNum := core.writeFont(f)
+	for alias, f := range core.fonts {
+		fontObjNum := core.writeFont(f, alias)
 
 		fontResources = append(fontResources, fontResource{
-			alias:  f.Alias(),
+			alias:  alias,
 			objNum: fontObjNum,
 		})
 	}
@@ -67,9 +67,9 @@ func (core *Core) writeResources() {
 	b.EndObj()
 }
 
-func (core *Core) writeFont(f *font.Font) int64 {
+func (core *Core) writeFont(f *font.Font, alias string) int64 {
 	b := core.mainBuffer
-	alias := "/" + f.Alias()
+	alias = "/" + alias
 
 	cMapB := buffer.New(1024)
 

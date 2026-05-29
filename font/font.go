@@ -193,7 +193,6 @@ func (f *Font) Data(comp compressor) (data []byte, uncompressedLen int, err erro
 	}
 
 	f.compressedData = compressedData
-	//f.compressedData = subset
 	f.manager.dirtyFlag = false
 
 	return compressedData, uncompressedLen, nil
