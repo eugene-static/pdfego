@@ -31,16 +31,15 @@ func BenchmarkUPD_FillTemplate(b *testing.B) {
 	b.ReportAllocs()
 	b.ResetTimer()
 
-	for i := range b.N {
-		var fileBytes []byte
-		fileBytes, err = upd.FillTemplate(c)
+	for range b.N {
+		_, err = upd.FillTemplate(c)
 		if err != nil {
 			b.Fatal(err)
 		}
 
-		if i == 0 {
-			b.Logf("bytes length: %d", len(fileBytes))
-		}
+		//if i == 0 {
+		//	b.Logf("bytes length: %d", len(fileBytes))
+		//}
 	}
 
 	b.StopTimer()

@@ -13,9 +13,9 @@ type Buffer struct {
 	content *bytes.Buffer
 }
 
-func New() *Buffer {
+func New(n int) *Buffer {
 	return &Buffer{
-		content: new(bytes.Buffer),
+		content: bytes.NewBuffer(make([]byte, 0, n)),
 	}
 }
 
@@ -40,14 +40,17 @@ func (b *Buffer) Reset() {
 }
 
 func (b *Buffer) ReadFrom(buf *Buffer) {
-	b.content.Grow(buf.Len())
-	b.content.ReadFrom(buf.content) //TODO: обработка ошибок
+	bufBytes := buf.Bytes()
+
+	//fmt.Printf("len(bufBytes)=%d\n", len(bufBytes))
+	b.content.Grow(len(bufBytes) + 1)
+	b.content.Write(bufBytes) //TODO: обработка ошибок
 	buf.Reset()
 	b.ln()
 }
 
 func (b *Buffer) Write(data []byte) (int, error) {
-	b.content.Grow(len(data))
+	b.content.Grow(len(data) + 1)
 	b.content.Write(data)
 	b.ln()
 
@@ -252,6 +255,7 @@ func (b *Buffer) WriteRect(bw meter.PT, x, y, w, h meter.MM) {
 }
 
 func (b *Buffer) write(data []byte) {
+	b.content.Grow(len(data))
 	b.content.Write(data)
 
 	return
@@ -259,6 +263,7 @@ func (b *Buffer) write(data []byte) {
 
 func (b *Buffer) writeString(s ...string) {
 	for i := range s {
+		b.content.Grow(len(s[i]))
 		b.content.WriteString(s[i])
 	}
 }

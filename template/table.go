@@ -37,7 +37,6 @@ type Table struct {
 	columns   []meter.MM
 	rows      []Row
 	cellsPool []cell
-	segBuffer []font.Segment
 	rowspans  []uint8
 	rowIndex  uint8
 	isPrinted bool
@@ -49,7 +48,6 @@ type Row struct {
 	cells       []cell
 	columns     []meter.MM
 	rowspans    []uint8
-	segBuffer   []font.Segment
 	height      meter.MM
 	columnIndex uint8
 	columnsLen  uint8
@@ -59,19 +57,19 @@ type cell struct {
 	id          uint8
 	font        *font.Font
 	textWrapped []font.Segment
-	textSpace   [1]font.Segment
-	width       meter.MM
-	height      meter.MM
-	fontSize    meter.PT
-	borderSize  meter.PT
-	borderMask  uint8
-	colspan     uint8
-	rowspan     uint8
-	alignH      uint8
-	alignV      uint8
-	wrapped     bool
-	static      bool
-	busy        bool
+	//textSpace   [1]font.Segment
+	width      meter.MM
+	height     meter.MM
+	fontSize   meter.PT
+	borderSize meter.PT
+	borderMask uint8
+	colspan    uint8
+	rowspan    uint8
+	alignH     uint8
+	alignV     uint8
+	wrapped    bool
+	static     bool
+	busy       bool
 }
 
 type CellOpts struct {
@@ -119,7 +117,6 @@ func (t *Table) newRow(row *Row) {
 	row.columnsLen = uint8(columnsLen)
 	row.cells = t.cellsPool[int(t.rowIndex)*columnsLen : int(t.rowIndex)*columnsLen+columnsLen]
 	row.rowspans = rowspans
-	row.segBuffer = t.segBuffer
 }
 
 func (t *Table) height() (h meter.MM) {
@@ -161,7 +158,7 @@ func (r *Row) CellWithOpts(text string, opts *CellOpts) *Row {
 
 	calcHeight := meter.FontHeight(c.fontSize) * meter.MM(len(c.textWrapped)) //TODO: r.core.FontHeight()
 
-	r.setHeight(c.height, calcHeight, c.static)
+	r.setHeight(c.height, calcHeight, c.rowspan, c.static)
 
 	r.updateIndexes(c.colspan, c.rowspan)
 
@@ -215,6 +212,7 @@ func (r *Row) Debug() {
 }
 
 func (r *Row) newCell(c *cell, text string, opts *CellOpts) {
+	c.textWrapped = make([]font.Segment, 0, 10)
 	c.font = r.core.Font(core.FontRegular)
 	c.fontSize = r.core.DefaultFontSize()
 	c.borderSize = r.core.BorderThin()
@@ -229,10 +227,11 @@ func (r *Row) newCell(c *cell, text string, opts *CellOpts) {
 	c.width = r.cellWidth(c.colspan)
 
 	if c.wrapped {
-		c.textWrapped = c.font.SplitText(text, c.fontSize, c.width, r.segBuffer)
+		c.textWrapped = append(c.textWrapped, c.font.SplitText(text, c.fontSize, c.width, c.textWrapped)...)
 	} else {
-		c.textWrapped = c.textSpace[:1]
-		c.textWrapped[0] = c.font.FullText(text, c.fontSize)
+		//c.textWrapped = c.textSpace[:1]
+		//c.textWrapped = append(c.textWrapped, font.Segment{})
+		c.textWrapped = append(c.textWrapped, c.font.FullText(text, c.fontSize))
 	}
 }
 
@@ -245,22 +244,26 @@ func (r *Row) width() (w float64) {
 }
 
 func (r *Row) updateCell(c *cell, text string) {
+	c.textWrapped = c.textWrapped[:0]
+
 	if c.wrapped {
-		c.textWrapped = c.font.SplitText(text, c.fontSize, c.width, r.segBuffer)
+		c.textWrapped = append(c.textWrapped, c.font.SplitText(text, c.fontSize, c.width, c.textWrapped)...)
 	} else {
-		c.textWrapped = c.textSpace[:1]
+		//c.textWrapped = c.textSpace[:1]
+		c.textWrapped = append(c.textWrapped, font.Segment{})
 		c.textWrapped[0] = c.font.FullText(text, c.fontSize)
 	}
 
 	calcHeight := meter.FontHeight(c.fontSize) * meter.MM(len(c.textWrapped))
 
-	r.setHeight(c.height, calcHeight, c.static)
+	r.setHeight(c.height, calcHeight, c.rowspan, c.static)
 }
 
 // Поле cell.height должно быть равно высоте строки, но пока все ячейки не будут созданы, мы не знаем итоговую высоту строки.
 // Поэтому высота ячейки будет определяться в методе render().
-func (r *Row) setHeight(optsHeight, calcHeight meter.MM, static bool) {
-	if calcHeight > r.height {
+// TODO: сейчас я не считаю высоту, если есть rowspan, т.к. не знаю высоту следующей строки. Надо все равно принимать во внимание
+func (r *Row) setHeight(optsHeight, calcHeight meter.MM, rowspan uint8, static bool) {
+	if calcHeight > r.height && rowspan < 2 {
 		r.height = calcHeight
 	}
 

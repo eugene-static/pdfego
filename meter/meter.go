@@ -58,3 +58,17 @@ func (mm MM) Neg() (res MM) {
 func FontHeight(fontSize PT) MM {
 	return fontSize.MM() * 1.2 //TODO:
 }
+
+//func Compress(data []byte, dst *buffer.Buffer) ([]byte, error) {
+//	dst.Reset()
+//	w := zlib.NewWriter(dst)
+//
+//	_, err := w.Write(data)
+//	if err != nil {
+//		return nil, err
+//	}
+//
+//	w.Close()
+//
+//	return b.Bytes(), nil
+//}

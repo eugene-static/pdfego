@@ -128,7 +128,7 @@ func NewUPD(detailsNum int) UPD {
 		DocReceiveDate:               "",
 		OrgSignImage:                 "/1691194.png",
 		Details:                      details,
-		DetailsOrdered:               make([]string, len(details)),
+		DetailsOrdered:               make([]string, 16),
 	}
 
 	return upd

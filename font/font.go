@@ -1,9 +1,7 @@
 package font
 
 import (
-	"bytes"
 	"cmp"
-	"compress/zlib"
 	"maps"
 	"os"
 	"slices"
@@ -71,25 +69,6 @@ func NewFont(path, alias string) (*Font, error) {
 	if err != nil {
 		return nil, err
 	}
-
-	//fontFile, err := os.Open(path)
-	//if err != nil {
-	//	return nil, err
-	//}
-	//
-	//defer fontFile.Close()
-	//
-	//face, err := font.ParseTTF(fontFile)
-	//if err != nil {
-	//	return nil, err
-	//}
-	//
-	//input := shaping.Input{
-	//	RunStart:     0,
-	//	Direction:    di.DirectionLTR,
-	//	Face:         face,
-	//	FontFeatures: nil,
-	//}
 
 	ppem := fixed.I(1000)
 
@@ -192,7 +171,11 @@ func (f *Font) Metrics() Metrics {
 	return f.metrics
 }
 
-func (f *Font) Data() (data []byte, uncompressedLen int, err error) {
+type compressor interface {
+	Compress(buf []byte) ([]byte, error)
+}
+
+func (f *Font) Data(comp compressor) (data []byte, uncompressedLen int, err error) {
 	uncompressedLen = len(f.rawData)
 
 	if !f.manager.dirtyFlag {
@@ -204,7 +187,7 @@ func (f *Font) Data() (data []byte, uncompressedLen int, err error) {
 		return nil, 0, err
 	}
 
-	compressedData, err := compress(subset)
+	compressedData, err := comp.Compress(subset)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -214,20 +197,6 @@ func (f *Font) Data() (data []byte, uncompressedLen int, err error) {
 	f.manager.dirtyFlag = false
 
 	return compressedData, uncompressedLen, nil
-}
-
-func compress(data []byte) ([]byte, error) {
-	var b bytes.Buffer
-	w := zlib.NewWriter(&b)
-
-	_, err := w.Write(data)
-	if err != nil {
-		return nil, err
-	}
-
-	w.Close()
-
-	return b.Bytes(), nil
 }
 
 func (f *Font) saveRune(r rune) {

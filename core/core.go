@@ -1,6 +1,7 @@
 package core
 
 import (
+	"compress/zlib"
 	"log/slog"
 
 	"github.com/eugene-static/pdf-craft/buffer"
@@ -22,12 +23,13 @@ type Core struct {
 	mainBuffer *buffer.Buffer
 	headBuffer *buffer.Buffer
 	pageBuffer *buffer.Buffer
+	compressor compressor
 	cursor     cursor
 	page       Page
 	border     border
 	fonts      map[string]*font.Font
 	fontSize   meter.PT
-	compress   bool
+	//compress   bool
 	pagesCount int64
 	cellCount  int
 	offsets    []int
@@ -43,6 +45,11 @@ type border struct {
 	thick meter.PT
 }
 
+type compressor struct {
+	buffer *buffer.Buffer
+	writer *zlib.Writer
+}
+
 func New(orientation string) *Core {
 	pg := Page{
 		width:  meter.PT(595.2).MM(),
@@ -55,9 +62,16 @@ func New(orientation string) *Core {
 
 	offsets := make([]int, 3, 100)
 
+	compBuffer := buffer.New(1024 * 1024)
+	comp := compressor{
+		buffer: compBuffer,
+		writer: zlib.NewWriter(compBuffer),
+	}
+
 	return &Core{
-		mainBuffer: buffer.New(),
-		pageBuffer: buffer.New(),
+		mainBuffer: buffer.New(64 * 1024),
+		pageBuffer: buffer.New(64 * 1024),
+		compressor: comp,
 		fonts:      make(map[string]*font.Font),
 		page:       pg,
 		offsets:    offsets,
@@ -75,9 +89,9 @@ func (core *Core) SetLogger(log *slog.Logger) {
 	core.log = log
 }
 
-func (core *Core) Compress() {
-	core.compress = true
-}
+//func (core *Core) Compress() {
+//	core.compress = true
+//}
 
 func (core *Core) SetFont(path, alias string) error {
 	f, err := font.NewFont(path, alias)
@@ -129,6 +143,13 @@ func (core *Core) BorderThick() meter.PT {
 }
 
 func (core *Core) Bytes() []byte {
+	//data := make([]byte, core.mainBuffer.Len())
+	//
+	//copy(data, core.mainBuffer.Bytes())
+	//core.mainBuffer.Reset()
+	//
+	//return data
+	defer core.mainBuffer.Reset()
 	return core.mainBuffer.Bytes()
 }
 
@@ -155,6 +176,17 @@ func (core *Core) setObject(objNum int) {
 	xLen := core.mainBuffer.Len()
 
 	core.offsets[objNum] = xLen
+}
+
+func (comp compressor) Compress(buf []byte) ([]byte, error) {
+	comp.buffer.Reset()
+
+	_, err := comp.writer.Write(buf)
+	if err != nil {
+		return nil, err
+	}
+
+	return comp.buffer.Bytes(), nil
 }
 
 func (core *Core) fontRegular() *font.Font {

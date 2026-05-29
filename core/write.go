@@ -10,11 +10,12 @@ import (
 )
 
 const (
-	pagesObjNum     = 1
-	resourcesObjNum = 2
+	objNumPages     = 1
+	objNumResources = 2
 )
 
 func (core *Core) StartDocument() {
+	//core.mainBuffer = buffer.New()
 	core.writeFileHeader()
 }
 
@@ -50,9 +51,9 @@ func (core *Core) writeResources() {
 
 	b := core.mainBuffer
 
-	core.setObject(resourcesObjNum)
+	core.setObject(objNumResources)
 
-	b.StartObj(resourcesObjNum)
+	b.StartObj(objNumResources)
 	b.OpenObjectParameters()
 	b.WriteFieldString("/Font", "")
 	b.OpenObjectParameters()
@@ -70,7 +71,7 @@ func (core *Core) writeFont(f *font.Font) int64 {
 	b := core.mainBuffer
 	alias := "/" + f.Alias()
 
-	cMapB := buffer.New()
+	cMapB := buffer.New(1024)
 
 	glyphs := f.Glyphs()
 
@@ -163,7 +164,7 @@ func (core *Core) writeFont(f *font.Font) int64 {
 	// "12 0 obj<< /Length %font_bytes_length /Length1 %font_bytes_length >>stream\nfont_bytes\nendstream\nendobj\n"
 	objNum = core.newObject()
 
-	data, l, err := f.Data()
+	data, l, err := f.Data(core.compressor)
 	if err != nil {
 		// TODO: errors
 		core.log.Debug("error reading data from font", slog.String("err", err.Error()))
@@ -186,9 +187,9 @@ func (core *Core) writeFont(f *font.Font) int64 {
 func (core *Core) writePages() {
 	b := core.mainBuffer
 
-	core.setObject(pagesObjNum)
+	core.setObject(objNumPages)
 
-	b.StartObj(pagesObjNum)
+	b.StartObj(objNumPages)
 	b.OpenObjectParameters()
 	b.WriteFieldString("/Type", "/Pages")
 	b.WriteRefArray("/Kids", core.pageObjs)
@@ -213,12 +214,15 @@ func (core *Core) WritePage() {
 
 	objNum := core.newObject()
 
+	compressed, _ := core.compressor.Compress(core.pageBuffer.Bytes())
+
 	b.StartObj(objNum)
 	b.OpenObjectParameters()
-	b.WriteFieldInt("/Length", core.pageBuffer.Len())
+	b.WriteFieldString("/Filter", "/FlateDecode")
+	b.WriteFieldInt("/Length", len(compressed))
 	b.CloseObjectParameters()
 	b.StartStream()
-	b.ReadFrom(core.pageBuffer)
+	b.Write(compressed)
 	b.EndStream()
 	b.EndObj()
 
@@ -254,7 +258,7 @@ func (core *Core) writeCatalog() int64 {
 	b.StartObj(objNum)
 	b.OpenObjectParameters()
 	b.WriteFieldString("/Type", "/Catalog")
-	b.WriteRef("/Pages", pagesObjNum)
+	b.WriteRef("/Pages", objNumPages)
 	b.CloseObjectParameters()
 	b.EndObj()
 

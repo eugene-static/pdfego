@@ -13,8 +13,6 @@ const (
 	repeatableBlock
 )
 
-//TODO: go fix -diff
-
 type Template struct {
 	core    *core.Core
 	buf     *buffer.Buffer

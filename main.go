@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"log"
 	"log/slog"
 	"os"
@@ -12,8 +13,6 @@ import (
 )
 
 func main() {
-	t := time.Now()
-
 	c := core.New(core.Landscape)
 	c.SetLogger(slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelDebug})))
 	c.SetMargin(3)
@@ -30,9 +29,12 @@ func main() {
 		log.Fatal(err)
 	}
 
-	upd := upd.NewUPD(20)
+	upd := upd.NewUPD(83000)
 
-	var m runtime.MemStats
+	var memBefore runtime.MemStats
+	runtime.ReadMemStats(&memBefore)
+
+	t := time.Now()
 
 	bytes, err := upd.FillTemplate(c)
 	if err != nil {
@@ -41,10 +43,17 @@ func main() {
 
 	log.Printf("duration: %v\n", time.Since(t))
 
-	runtime.ReadMemStats(&m)
-	peakMegabytes := float64(m.HeapInuse) / (1024 * 1024)
+	var memAfter runtime.MemStats
 
-	log.Printf("[INFO] Пиковое потребление памяти в куче: %.2f MB\n", peakMegabytes)
+	runtime.GC()
+	runtime.ReadMemStats(&memAfter)
+
+	totalBytesAllocated := memAfter.TotalAlloc - memBefore.TotalAlloc
+	totalObjectsAllocated := memAfter.Mallocs - memBefore.Mallocs
+
+	c.Log().Debug("выделено памяти за один прогон, МБ", slog.String("total_alloc", fmt.Sprintf("%.2f", float64(totalBytesAllocated)/(1024*1024))))
+	c.Log().Debug("выделено памяти в куче, МБ", slog.String("heap_in_use", fmt.Sprintf("%.2f", float64(memAfter.HeapInuse)/(1024*1024))))
+	c.Log().Debug("количество аллокаций за один прогон", slog.Uint64("malloc", totalObjectsAllocated))
 
 	output, err := os.Create("output.pdf")
 	if err != nil {

@@ -42,7 +42,7 @@ func (core *Core) AddHeader() *buffer.Buffer {
 		return core.headBuffer
 	}
 
-	buf := buffer.New()
+	buf := buffer.New(64 * 1024)
 
 	core.headBuffer = buf
 
