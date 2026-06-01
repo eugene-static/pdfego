@@ -12,8 +12,9 @@ import (
 )
 
 const (
-	hintingNone = 0
-	notdef      = 0
+	hintingNone               = 0
+	notdef                    = 0
+	ppem        fixed.Int26_6 = 1000 << 6
 
 	splitTab     = '\t'
 	splitNewline = '\n'
@@ -52,20 +53,20 @@ type Glyph struct {
 //	/CapHeight 688
 //	/StemV 80
 type Metrics struct {
+	FontBBox  []int
 	Ascent    int
 	Descent   int
 	CapHeight int
 	StemV     int
-	Ppem      fixed.Int26_6
-	FontBBox  []int
+	Height    fixed.Int26_6
 }
 
 type fontManager struct {
 	faceBuffer     *sfnt.Buffer
 	textBuffer     []rune
-	glyphsCache    map[rune]Glyph
-	glyphFastCache []Glyph
 	glyphs         []Glyph
+	glyphFastCache []Glyph
+	glyphsCache    map[rune]Glyph
 	dirtyFlag      bool
 }
 
@@ -80,20 +81,19 @@ func New(path, alias string) (*Font, error) {
 		return nil, err
 	}
 
-	ppem := fixed.I(1000)
+	buf := new(sfnt.Buffer)
 
-	var buf sfnt.Buffer
-
-	sfntMetrics, err := sfntFont.Metrics(&buf, ppem, hintingNone)
+	sfntMetrics, err := sfntFont.Metrics(buf, ppem, hintingNone)
 	if err != nil {
 		return nil, err
 	}
 
+	height := sfntMetrics.Height
 	ascent := sfntMetrics.Ascent.Round()
 	descent := sfntMetrics.Descent.Round()
 	capHeight := sfntMetrics.CapHeight.Round()
 
-	bounds, err := sfntFont.Bounds(&buf, ppem, hintingNone)
+	bounds, err := sfntFont.Bounds(buf, ppem, hintingNone)
 	if err != nil {
 		return nil, err
 	}
@@ -110,12 +110,12 @@ func New(path, alias string) (*Font, error) {
 	// Среднее значение
 	glyphAdvanceRounded := 80
 
-	glyphIndex, err := sfntFont.GlyphIndex(&buf, 'I')
+	glyphIndex, err := sfntFont.GlyphIndex(buf, 'I')
 	if err != nil {
 		return nil, err
 	}
 
-	glyphAdvance, err := sfntFont.GlyphAdvance(&buf, glyphIndex, ppem, hintingNone)
+	glyphAdvance, err := sfntFont.GlyphAdvance(buf, glyphIndex, ppem, hintingNone)
 	if err != nil {
 		return nil, err
 	}
@@ -128,12 +128,12 @@ func New(path, alias string) (*Font, error) {
 	stemV := glyphAdvanceRounded
 
 	metrics := Metrics{
+		FontBBox:  fontBBox,
 		Ascent:    ascent,
 		Descent:   descent,
 		CapHeight: capHeight,
 		StemV:     stemV,
-		Ppem:      ppem,
-		FontBBox:  fontBBox,
+		Height:    height,
 	}
 
 	f := &Font{
@@ -142,9 +142,9 @@ func New(path, alias string) (*Font, error) {
 		rawData: fontBytes,
 		metrics: metrics,
 		manager: fontManager{
-			faceBuffer:     &buf,
+			faceBuffer:     buf,
 			glyphsCache:    make(map[rune]Glyph),
-			glyphFastCache: make([]Glyph, 1200),
+			glyphFastCache: make([]Glyph, rusRunesLimitIndex),
 		},
 	}
 
@@ -155,13 +155,23 @@ func (f *Font) Alias() string {
 	return f.alias
 }
 
+func (f *Font) Height(size unit.PT) unit.PT {
+	return size * unit.PT(float64(f.metrics.Height)/float64(ppem))
+}
+
 func (f *Font) GID(r rune) uint16 {
-	gl, ok := f.manager.glyphsCache[r]
-	if !ok {
-		return notdef
+	if r < rusRunesLimitIndex {
+		gl := f.manager.glyphFastCache[r]
+
+		return gl.Index()
 	}
 
-	return uint16(gl.index)
+	gl, ok := f.manager.glyphsCache[r]
+	if ok {
+		return gl.Index()
+	}
+
+	return notdef
 }
 
 func (f *Font) Glyphs() []Glyph {
@@ -236,7 +246,7 @@ func (f *Font) MeasureText(fontSize unit.PT, text []rune, start, end int) unit.P
 	fontSizeEm := fontSize.FixedI()
 	advance = advance.Mul(fontSizeEm)
 
-	width := unit.PT(float64(advance) / float64(f.metrics.Ppem))
+	width := unit.PT(float64(advance) / float64(ppem))
 
 	return width
 }
@@ -352,7 +362,7 @@ func (f *Font) saveRune(r rune) {
 	advance, err := f.face.GlyphAdvance(
 		f.manager.faceBuffer,
 		gid,
-		f.metrics.Ppem,
+		ppem,
 		hintingNone,
 	)
 	if err != nil {
@@ -398,6 +408,8 @@ func (mgr *fontManager) wrapSymbols(index int) bool {
 		return false
 	}
 
-	return mgr.textBuffer[index] == splitSpace || mgr.textBuffer[index] == splitTab ||
-		mgr.textBuffer[index] == splitNewline || mgr.textBuffer[index] == splitReturn
+	return mgr.textBuffer[index] == splitSpace ||
+		mgr.textBuffer[index] == splitTab ||
+		mgr.textBuffer[index] == splitNewline ||
+		mgr.textBuffer[index] == splitReturn
 }

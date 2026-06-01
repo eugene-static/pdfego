@@ -77,7 +77,7 @@ func (t *Table) newRow(row *Row) {
 	}
 
 	row.core = t.core
-	row.height = unit.FontHeight(t.core.DefaultFontSize())
+	//row.height = unit.FontHeight(t.core.DefaultFontSize())
 	row.columns = t.columns
 	row.columnsLen = uint8(columnsLen)
 	row.cells = t.cellsPool[int(t.rowIndex)*columnsLen : int(t.rowIndex)*columnsLen+columnsLen]
@@ -221,7 +221,8 @@ func (r *Row) updateCell(c *cell, text string) {
 // Поэтому высота ячейки будет определяться в методе render().
 // TODO: сейчас я не считаю высоту, если есть rowspan, т.к. не знаю высоту следующей строки. Может быть нужно её учитывать
 func (r *Row) setHeight(c *cell) {
-	calcHeight := unit.FontHeight(c.fontSize) * unit.MM(len(c.textWrapped))
+	//calcHeight := unit.FontHeight(c.fontSize) * unit.MM(len(c.textWrapped))
+	calcHeight := c.font.Height(c.fontSize).MM() * unit.MM(len(c.textWrapped))
 
 	if calcHeight > r.height && c.rowspan < 2 {
 		r.height = calcHeight
