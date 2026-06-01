@@ -2,58 +2,66 @@ package core
 
 import (
 	"github.com/eugene-static/pdf-craft/internal/buffer"
-	"github.com/eugene-static/pdf-craft/pkg/meter"
+	"github.com/eugene-static/pdf-craft/pkg/unit"
 )
 
 type Page struct {
-	width  meter.MM
-	height meter.MM
-	margin meter.MM
+	buffer       *buffer.Buffer
+	headerBuffer *buffer.Buffer
+	width        unit.MM
+	height       unit.MM
+	margin       unit.MM
 }
 
-func (p Page) X0Y0() (meter.MM, meter.MM) {
+func (p *Page) X0Y0() (unit.MM, unit.MM) {
 	return p.margin, p.margin - p.height
 }
 
-func (p Page) IsBelowBottomBorder(y meter.MM) bool {
+func (p *Page) IsBelowBottomBorder(y unit.MM) bool {
 	return y+p.margin > 0
+}
+
+func (p *Page) New() error {
+	if p.headerBuffer != nil && p.headerBuffer.Len() > 0 {
+		_, err := p.buffer.Write(p.headerBuffer.Bytes())
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func (p *Page) Buffer() *buffer.Buffer {
+	return p.buffer
+}
+
+func (p *Page) AddHeader() *buffer.Buffer {
+	if p.headerBuffer != nil {
+		p.headerBuffer.Reset()
+
+		return p.headerBuffer
+	}
+
+	buf := buffer.New(bufferSize)
+
+	p.headerBuffer = buf
+
+	return buf
+}
+
+func (p *Page) RemoveHeader() {
+	p.headerBuffer.Reset()
 }
 
 func (core *Core) Page() Page {
 	return core.page
 }
 
-func (core *Core) SetMargin(margin float64) {
-	core.page.margin = meter.MM(margin)
+func (core *Core) SetMargin(margin unit.MM) {
+	core.page.margin = margin
 }
 
-func (core *Core) NewPage() *buffer.Buffer {
-	if core.pageBuffer.Len() > 0 {
-		core.writePage()
-		core.pageBuffer.Reset()
-	}
-
-	if core.headBuffer != nil && core.headBuffer.Len() > 0 {
-		core.pageBuffer.Write(core.headBuffer.Bytes())
-	}
-
-	return core.pageBuffer
-}
-
-func (core *Core) AddHeader() *buffer.Buffer {
-	if core.headBuffer != nil {
-		core.headBuffer.Reset()
-
-		return core.headBuffer
-	}
-
-	buf := buffer.New(64 * 1024)
-
-	core.headBuffer = buf
-
-	return buf
-}
-
-func (core *Core) RemoveHeader() {
-	core.headBuffer.Reset()
+func (core *Core) RenderPage() {
+	core.writePage()
 }

@@ -2,8 +2,8 @@ package template
 
 import (
 	"github.com/eugene-static/pdf-craft/internal/buffer"
-	core2 "github.com/eugene-static/pdf-craft/internal/core/core"
-	"github.com/eugene-static/pdf-craft/pkg/meter"
+	"github.com/eugene-static/pdf-craft/internal/core/core"
+	"github.com/eugene-static/pdf-craft/pkg/unit"
 )
 
 const (
@@ -13,27 +13,27 @@ const (
 	repeatableBlock
 )
 
-type Template struct {
-	core    *core2.Core
+type Constructor struct {
+	core    *core.Core
 	buf     *buffer.Buffer
-	page    core2.Page
+	page    core.Page
 	block   Block
 	ordered Ordered
-	x0      meter.MM
-	y0      meter.MM
-	x       meter.MM
-	y       meter.MM
+	x0      unit.MM
+	y0      unit.MM
+	x       unit.MM
+	y       unit.MM
 }
 
-func New(core *core2.Core) *Template {
+func New(core *core.Core) *Constructor {
 	core.StartDocument()
-	buf := core.NewPage()
 	page := core.Page()
 	x0, y0 := page.X0Y0()
 
-	return &Template{
+	page.New() // ошибки не будет, так как буфер хэдера еще не записан.
+
+	return &Constructor{
 		core: core,
-		buf:  buf,
 		page: page,
 		x0:   x0,
 		y0:   y0,
@@ -42,29 +42,23 @@ func New(core *core2.Core) *Template {
 	}
 }
 
-func (t *Template) Render() {
-	t.render()
-	t.core.FinishDocument()
+func (c *Constructor) Render() {
+	c.render()
+	c.core.FinishDocument()
 }
 
 type Block struct {
 	profile byte
-	core    *core2.Core
+	core    *core.Core
 	slots   []Slot
-	opts    Options
+	opts    NodeOptions
 }
 
 type Slot struct {
-	core   *core2.Core
+	core   *core.Core
 	blocks []Block
 	table  *Table
-	opts   Options
-}
-
-type Options struct {
-	Spacing meter.MM
-	Indent  meter.MM
-	Ledge   meter.MM
+	opts   NodeOptions
 }
 
 type Ordered interface {
@@ -72,81 +66,75 @@ type Ordered interface {
 	OrderedRow(int) []string
 }
 
-func (t *Template) Bytes() []byte {
-	return t.core.Bytes()
+func (c *Constructor) Bytes() ([]byte, error) {
+	return c.core.Bytes(), c.core.Err()
 }
 
-func (t *Template) Block(opts ...Options) *Block {
-	t.newBlock(defaultBlock, opts)
+func (c *Constructor) Block(opts ...NodeOptions) *Block {
+	c.newBlock(defaultBlock, opts)
 
-	return &t.block
+	return &c.block
 }
 
-func (t *Template) Header(opts ...Options) *Block {
-	t.newBlock(headerBlock, opts)
+func (c *Constructor) Header(opts ...NodeOptions) *Block {
+	c.newBlock(headerBlock, opts)
 
-	return &t.block
+	return &c.block
 }
 
-func (t *Template) EndHeader(opts ...Options) *Block {
-	t.newBlock(headerStopBlock, opts)
+func (c *Constructor) EndHeader(opts ...NodeOptions) *Block {
+	c.newBlock(headerStopBlock, opts)
 
-	return &t.block
+	return &c.block
 }
 
-func (t *Template) Repeater(ordered Ordered) *Template {
-	t.ordered = ordered
-	t.newBlock(repeatableBlock, nil)
+func (c *Constructor) Repeater(ordered Ordered) *Constructor {
+	c.ordered = ordered
+	c.newBlock(repeatableBlock, nil)
 
-	return t
+	return c
 }
 
-func (t *Template) Repeat(blockFunc func(*Block, []string)) {
-	ordered := t.ordered.OrderedRow(0)
+func (c *Constructor) Repeat(blockFunc func(*Block, []string)) {
+	ordered := c.ordered.OrderedRow(0)
 
-	blockFunc(&t.block, ordered)
+	blockFunc(&c.block, ordered)
 
-	for i := range t.ordered.Len() - 1 {
-		t.render()
+	for i := range c.ordered.Len() - 1 {
+		c.render()
 
-		ordered = t.ordered.OrderedRow(i + 1)
+		ordered = c.ordered.OrderedRow(i + 1)
 
-		t.block.update(ordered)
+		c.block.update(ordered)
 	}
 }
 
-func (t *Template) newBlock(profile byte, opts []Options) *Block {
-	var opt Options
-	if len(opts) != 0 {
-		opt = opts[0]
+func (c *Constructor) newBlock(profile byte, opts []NodeOptions) *Block {
+	options := getOptions(opts)
+
+	if c.block.core == nil {
+		c.block.core = c.core
+		c.block.profile = profile
+		c.block.opts = options
+
+		return &c.block
 	}
 
-	if t.block.core == nil {
-		t.block.core = t.core
-		t.block.profile = profile
-		t.block.opts = opt
+	c.render()
 
-		return &t.block
-	}
+	c.block.slots = c.block.slots[:0]
+	c.block.profile = profile
+	c.block.opts = options
 
-	t.render()
-
-	t.block.slots = t.block.slots[:0]
-	t.block.profile = profile
-	t.block.opts = opt
-
-	return &t.block
+	return &c.block
 }
 
-func (b *Block) Slot(opts ...Options) *Slot {
-	var opt Options
-	if len(opts) != 0 {
-		opt = opts[0]
-	}
+func (b *Block) Slot(opts ...NodeOptions) *Slot {
+	options := getOptions(opts)
 
 	s := Slot{
 		core: b.core,
-		opts: opt,
+		opts: options,
 	}
 
 	b.slots = append(b.slots, s)
@@ -160,15 +148,12 @@ func (b *Block) Add(blockFunc func(b *Block)) *Block {
 	return b
 }
 
-func (s *Slot) Block(opts ...Options) *Block {
-	var opt Options
-	if len(opts) != 0 {
-		opt = opts[0]
-	}
+func (s *Slot) Block(opts ...NodeOptions) *Block {
+	options := getOptions(opts)
 
 	b := Block{
 		core: s.core,
-		opts: opt,
+		opts: options,
 	}
 
 	s.blocks = append(s.blocks, b)
@@ -176,7 +161,7 @@ func (s *Slot) Block(opts ...Options) *Block {
 	return &s.blocks[len(s.blocks)-1]
 }
 
-func (s *Slot) Table(rowsNum int, columns []meter.MM) *Table {
+func (s *Slot) Table(rowsNum int, columns []unit.MM) *Table {
 	columnsNum := len(columns)
 
 	t := &Table{
@@ -198,32 +183,41 @@ func (s *Slot) Add(slotFunc func(s *Slot)) *Slot {
 	return s
 }
 
-func (t *Template) render() {
-	height := t.block.height()
+func (c *Constructor) render() {
+	height := c.block.height()
 
-	if t.block.profile == headerBlock {
-		header := t.core.AddHeader()
+	if c.block.profile == headerBlock {
+		header := c.page.AddHeader()
 
-		t.block.render(header, t.x0, t.y0)
-		t.y0 += height
+		c.block.render(header, c.x0, c.y0)
+		c.y0 += height
 	}
 
-	if t.block.profile == headerStopBlock {
-		_, t.y0 = t.page.X0Y0()
+	if c.block.profile == headerStopBlock {
+		_, c.y0 = c.page.X0Y0()
 	}
 
-	if t.page.IsBelowBottomBorder(t.y + height) {
-		t.core.NewPage()
-		t.x, t.y = t.x0, t.y0
+	if c.page.IsBelowBottomBorder(c.y + c.block.opts.IndentTop + height) {
+		c.core.RenderPage()
+
+		err := c.page.New()
+		if err != nil {
+			c.core.WriteError(err)
+
+			return
+		}
+
+		c.x, c.y = c.x0, c.y0
 	}
 
-	t.block.render(t.buf, t.x, t.y)
+	c.block.render(c.page.Buffer(), c.x, c.y)
 
-	t.y += height
+	c.y += height
 }
 
-func (b *Block) render(buf *buffer.Buffer, x, y meter.MM) {
-	y += b.opts.Indent
+func (b *Block) render(buf *buffer.Buffer, x, y unit.MM) {
+	x += b.opts.IndentLeft
+	y += b.opts.IndentTop
 
 	for i := range b.slots {
 		b.slots[i].render(buf, x, y)
@@ -232,8 +226,24 @@ func (b *Block) render(buf *buffer.Buffer, x, y meter.MM) {
 	}
 }
 
-func (s *Slot) render(buf *buffer.Buffer, x, y meter.MM) {
+func (s *Slot) render(buf *buffer.Buffer, x, y unit.MM) {
+	x += s.opts.IndentLeft
+	y += s.opts.IndentTop
+
 	if len(s.blocks) > 0 {
+		if s.opts.Border != "" {
+			borderMask := parseBorder(s.opts.Border)
+			width := s.width()
+			height := s.height() + s.opts.IndentTop
+
+			borderSize := s.core.BorderThin()
+			if s.opts.BorderSize > 0 {
+				borderSize = s.opts.BorderSize
+			}
+
+			renderBorder(buf, x, y, width, height, borderMask, borderSize)
+		}
+
 		for i := range s.blocks {
 			s.blocks[i].render(buf, x, y)
 
@@ -246,7 +256,7 @@ func (s *Slot) render(buf *buffer.Buffer, x, y meter.MM) {
 	s.table.render(buf, x, y)
 }
 
-func (t *Table) render(buf *buffer.Buffer, x, y meter.MM) {
+func (t *Table) render(buf *buffer.Buffer, x, y unit.MM) {
 	cx := x
 	cy := y
 
@@ -303,7 +313,7 @@ func (t *Table) update(ordered []string) {
 	}
 }
 
-func (b *Block) height() (h meter.MM) {
+func (b *Block) height() (h unit.MM) {
 	for i := range b.slots {
 		sh := b.slots[i].height()
 		if h < sh {
@@ -311,15 +321,15 @@ func (b *Block) height() (h meter.MM) {
 		}
 	}
 
-	return h + b.opts.Indent + b.opts.Ledge
+	return h + b.opts.Ledge
 }
 
-func (s *Slot) height() (h meter.MM) {
-	h = s.opts.Indent + s.opts.Ledge
+func (s *Slot) height() (h unit.MM) {
+	h = s.opts.Ledge
 
 	if len(s.blocks) > 0 {
 		for i := range s.blocks {
-			h += s.blocks[i].height()
+			h += s.blocks[i].height() + s.blocks[i].opts.IndentTop + s.blocks[i].opts.Ledge
 		}
 
 		return h
@@ -330,20 +340,20 @@ func (s *Slot) height() (h meter.MM) {
 	return h
 }
 
-func (b *Block) width() (w meter.MM) {
+func (b *Block) width() (w unit.MM) {
 	for i := range b.slots {
-		w += b.slots[i].width()
+		w += b.slots[i].width() + b.slots[i].opts.IndentLeft
 	}
 
-	w += b.opts.Spacing * meter.MM(len(b.slots)-1)
+	w += b.opts.Spacing * unit.MM(len(b.slots)-1)
 
 	return w
 }
 
-func (s *Slot) width() (w meter.MM) {
+func (s *Slot) width() (w unit.MM) {
 	if len(s.blocks) > 0 {
 		for i := range s.blocks {
-			bw := s.blocks[i].width()
+			bw := s.blocks[i].width() + s.blocks[i].opts.IndentLeft
 			if w < bw {
 				w = bw
 			}

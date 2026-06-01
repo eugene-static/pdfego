@@ -6,7 +6,7 @@ import (
 	"os"
 	"slices"
 
-	"github.com/eugene-static/pdf-craft/pkg/meter"
+	"github.com/eugene-static/pdf-craft/pkg/unit"
 	"golang.org/x/image/font/sfnt"
 	"golang.org/x/image/math/fixed"
 )
@@ -14,6 +14,14 @@ import (
 const (
 	hintingNone = 0
 	notdef      = 0
+
+	splitTab     = '\t'
+	splitNewline = '\n'
+	splitReturn  = '\r'
+	splitSpace   = ' '
+
+	defaultAdvance     fixed.Int26_6 = 600
+	rusRunesLimitIndex               = 1200
 )
 
 type Font struct {
@@ -197,9 +205,9 @@ func (f *Font) SaveCompressedBytes(data []byte) {
 	f.manager.dirtyFlag = false
 }
 
-func (f *Font) MeasureText(fontSize meter.PT, text []rune, start, end int) meter.PT {
+func (f *Font) MeasureText(fontSize unit.PT, text []rune, start, end int) unit.PT {
 	if start < 0 || end > len(text) || start >= end {
-		return meter.PT(0)
+		return unit.PT(0)
 	}
 
 	var advance fixed.Int26_6
@@ -218,7 +226,7 @@ func (f *Font) MeasureText(fontSize meter.PT, text []rune, start, end int) meter
 
 		gl, ok := f.manager.glyphsCache[text[i]]
 		if !ok {
-			advance += 600
+			advance += defaultAdvance
 			continue
 		}
 
@@ -228,12 +236,12 @@ func (f *Font) MeasureText(fontSize meter.PT, text []rune, start, end int) meter
 	fontSizeEm := fontSize.FixedI()
 	advance = advance.Mul(fontSizeEm)
 
-	width := meter.PT(float64(advance) / float64(f.metrics.Ppem))
+	width := unit.PT(float64(advance) / float64(f.metrics.Ppem))
 
 	return width
 }
 
-func (f *Font) FullText(text string, size meter.PT) Text {
+func (f *Font) FullText(text string, size unit.PT) Text {
 	f.manager.textBuffer = f.manager.textBuffer[:0]
 
 	for _, r := range text {
@@ -249,7 +257,7 @@ func (f *Font) FullText(text string, size meter.PT) Text {
 	}
 }
 
-func (f *Font) SplitText(text string, size meter.PT, width meter.MM, buf []Text) []Text {
+func (f *Font) SplitText(text string, size unit.PT, width unit.MM, buf []Text) []Text {
 	segments := buf[:0]
 	f.manager.textBuffer = f.manager.textBuffer[:0]
 	targetWidth := width.PT()
@@ -296,7 +304,7 @@ func (f *Font) SplitText(text string, size meter.PT, width meter.MM, buf []Text)
 
 		candidateWidth := f.MeasureText(size, f.manager.textBuffer, lineStart, wordEnd)
 
-		if candidateWidth > targetWidth || f.manager.textBuffer[lineEnd] == '\n' {
+		if candidateWidth > targetWidth || f.manager.textBuffer[lineEnd] == splitNewline {
 			segments = append(segments, Text{
 				data:  string(f.manager.textBuffer[lineStart:lineEnd]),
 				width: textWidth.MM(),
@@ -326,7 +334,7 @@ func (f *Font) SplitText(text string, size meter.PT, width meter.MM, buf []Text)
 }
 
 func (f *Font) saveRune(r rune) {
-	if r < 1200 && f.manager.glyphFastCache[r].rune > 0 {
+	if r < rusRunesLimitIndex && f.manager.glyphFastCache[r].rune > 0 {
 		return
 	}
 
@@ -335,23 +343,23 @@ func (f *Font) saveRune(r rune) {
 		return
 	}
 
-	if r == '\n' {
+	if r == splitNewline {
 		return
 	}
 
-	gid, _ := f.face.GlyphIndex(f.manager.faceBuffer, r) //err is always nil
+	gid, _ := f.face.GlyphIndex(f.manager.faceBuffer, r) // err всегда nil
 
-	adv, err := f.face.GlyphAdvance(
+	advance, err := f.face.GlyphAdvance(
 		f.manager.faceBuffer,
 		gid,
 		f.metrics.Ppem,
 		hintingNone,
 	)
 	if err != nil {
-		adv = 600
+		advance = defaultAdvance // нас не интересует ошибка, просто ставим среднюю ширину символа.
 	}
 
-	f.manager.addGlyph(r, gid, adv)
+	f.manager.addGlyph(r, gid, advance)
 
 	f.manager.dirtyFlag = true
 }
@@ -390,5 +398,6 @@ func (mgr *fontManager) wrapSymbols(index int) bool {
 		return false
 	}
 
-	return mgr.textBuffer[index] == ' ' || mgr.textBuffer[index] == '\t' || mgr.textBuffer[index] == '\n' || mgr.textBuffer[index] == '\r'
+	return mgr.textBuffer[index] == splitSpace || mgr.textBuffer[index] == splitTab ||
+		mgr.textBuffer[index] == splitNewline || mgr.textBuffer[index] == splitReturn
 }

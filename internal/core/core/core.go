@@ -6,7 +6,7 @@ import (
 
 	"github.com/eugene-static/pdf-craft/internal/buffer"
 	"github.com/eugene-static/pdf-craft/internal/font"
-	"github.com/eugene-static/pdf-craft/pkg/meter"
+	"github.com/eugene-static/pdf-craft/pkg/unit"
 )
 
 const (
@@ -18,22 +18,27 @@ const (
 	Landscape = "L"
 )
 
+const (
+	bufferSize = 1 << 16
+)
+
 type Core struct {
 	log        *slog.Logger
 	mainBuffer *buffer.Buffer
-	headBuffer *buffer.Buffer
-	pageBuffer *buffer.Buffer
+	//headBuffer *buffer.Buffer
+	//pageBuffer *buffer.Buffer
 	compressor compressor
 	cursor     cursor
 	page       Page
 	border     border
 	fonts      map[string]*font.Font
-	fontSize   meter.PT
+	fontSize   unit.PT
 	//compress   bool
 	pagesCount int64
 	cellCount  int
 	offsets    []int
 	pageObjs   []int64
+	error      error
 }
 
 type cursor struct {
@@ -41,8 +46,8 @@ type cursor struct {
 }
 
 type border struct {
-	thin  meter.PT
-	thick meter.PT
+	thin  unit.PT
+	thick unit.PT
 }
 
 type compressor struct {
@@ -52,8 +57,9 @@ type compressor struct {
 
 func New(orientation string) *Core {
 	pg := Page{
-		width:  meter.PT(595.2).MM(),
-		height: meter.PT(841.89).MM(),
+		width:  unit.PT(595.2).MM(),
+		height: unit.PT(841.89).MM(),
+		buffer: buffer.New(bufferSize),
 	}
 
 	if orientation == Landscape {
@@ -62,15 +68,15 @@ func New(orientation string) *Core {
 
 	offsets := make([]int, 3, 100)
 
-	compBuffer := buffer.New(1 << 16)
+	compBuffer := buffer.New(bufferSize)
 	comp := compressor{
 		buffer: compBuffer,
 		writer: zlib.NewWriter(compBuffer),
 	}
 
 	return &Core{
-		mainBuffer: buffer.New(1 << 16),
-		pageBuffer: buffer.New(1 << 16),
+		mainBuffer: buffer.New(bufferSize),
+		//pageBuffer: buffer.New(1 << 16),
 		compressor: comp,
 		fonts:      make(map[string]*font.Font),
 		page:       pg,
@@ -78,10 +84,18 @@ func New(orientation string) *Core {
 	}
 }
 
+func (core *Core) WriteError(err error) {
+	core.error = err
+}
+
+func (core *Core) Err() error {
+	return core.error
+}
+
 func (core *Core) SetBorders(thin, thick float64) {
 	core.border = border{
-		thin:  meter.PT(thin),
-		thick: meter.PT(thick),
+		thin:  unit.PT(thin),
+		thick: unit.PT(thick),
 	}
 }
 
@@ -123,22 +137,22 @@ func (core *Core) SetFontBold(path string) error {
 }
 
 func (core *Core) SetDefaultFontSize(fontSize int) {
-	core.fontSize = meter.PT(fontSize)
+	core.fontSize = unit.PT(fontSize)
 }
 
 func (core *Core) IncreaseCellsCount(n int) {
 	core.cellCount += n
 }
 
-func (core *Core) DefaultFontSize() meter.PT {
+func (core *Core) DefaultFontSize() unit.PT {
 	return core.fontSize
 }
 
-func (core *Core) BorderThin() meter.PT {
+func (core *Core) BorderThin() unit.PT {
 	return core.border.thin
 }
 
-func (core *Core) BorderThick() meter.PT {
+func (core *Core) BorderThick() unit.PT {
 	return core.border.thick
 }
 
@@ -182,8 +196,14 @@ func (core *Core) fontBold() *font.Font {
 
 func (comp compressor) Compress(buf []byte) ([]byte, error) {
 	comp.buffer.Reset()
+	comp.writer.Reset(comp.buffer)
 
 	_, err := comp.writer.Write(buf)
+	if err != nil {
+		return nil, err
+	}
+
+	err = comp.writer.Close()
 	if err != nil {
 		return nil, err
 	}

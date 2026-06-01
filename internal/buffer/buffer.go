@@ -6,7 +6,7 @@ import (
 	"strconv"
 
 	"github.com/eugene-static/pdf-craft/internal/font"
-	"github.com/eugene-static/pdf-craft/pkg/meter"
+	"github.com/eugene-static/pdf-craft/pkg/unit"
 )
 
 type Buffer struct {
@@ -39,22 +39,28 @@ func (b *Buffer) Reset() {
 	b.content.Reset()
 }
 
-func (b *Buffer) ReadFrom(buf *Buffer) {
+func (b *Buffer) ReadFrom(buf *Buffer) (int, error) {
 	bufBytes := buf.Bytes()
+	lenBytes := len(bufBytes) + 1
 
-	//fmt.Printf("len(bufBytes)=%d\n", len(bufBytes))
-	b.content.Grow(len(bufBytes) + 1)
-	b.content.Write(bufBytes) //TODO: обработка ошибок
+	b.content.Grow(lenBytes)
+
+	_, err := b.content.Write(bufBytes)
+	if err != nil {
+		return 0, err
+	}
+
 	buf.Reset()
 	b.ln()
+
+	return lenBytes, nil
 }
 
 func (b *Buffer) Write(data []byte) (int, error) {
-	b.content.Grow(len(data) + 1)
+	b.content.Grow(len(data))
 	b.content.Write(data)
-	b.ln()
 
-	return len(data) + 1, nil
+	return len(data), nil
 }
 
 func (b *Buffer) WriteStringLn(val string) {
@@ -64,14 +70,14 @@ func (b *Buffer) WriteStringLn(val string) {
 }
 
 // /REG 14 Tf
-func (b *Buffer) WriteFont(alias string, fontSize meter.PT) {
+func (b *Buffer) WriteFont(alias string, fontSize unit.PT) {
 	b.writeString("/", alias, " ")
 	b.writeFloat64(fontSize.Float64())
 	b.writeString(" Tf\n")
 }
 
 // "1 0 0 1 x y Tm" задает абсолютную позицию текста на странице.
-func (b *Buffer) WriteText(font *font.Font, x, y meter.MM, text string) {
+func (b *Buffer) WriteText(font *font.Font, x, y unit.MM, text string) {
 	b.content.WriteString("1 0 0 1 ")
 	b.writeXY(x, y)
 	b.content.WriteString(" Tm <")
@@ -159,7 +165,7 @@ func (b *Buffer) StartStream() {
 
 // endstream
 func (b *Buffer) EndStream() {
-	b.content.WriteString("endstream\n")
+	b.content.WriteString("\nendstream\n")
 }
 
 // /Parent 1 0 R
@@ -235,7 +241,7 @@ func (b *Buffer) WriteFieldFloatArray(field string, arr []float64) {
 }
 
 // 1 w x0 y0 m x1 y1 l S
-func (b *Buffer) WriteLine(bw meter.PT, x0, y0, x1, y1 meter.MM) {
+func (b *Buffer) WriteLine(bw unit.PT, x0, y0, x1, y1 unit.MM) {
 	b.writeFloat64(bw.Float64())
 	b.writeString(" w ")
 	b.writeXY(x0, y0)
@@ -245,7 +251,7 @@ func (b *Buffer) WriteLine(bw meter.PT, x0, y0, x1, y1 meter.MM) {
 }
 
 // 1 w x0 y0 w h re S
-func (b *Buffer) WriteRect(bw meter.PT, x, y, w, h meter.MM) {
+func (b *Buffer) WriteRect(bw unit.PT, x, y, w, h unit.MM) {
 	b.writeFloat64(bw.Float64())
 	b.writeString(" w ")
 	b.writeXY(x, y)
@@ -289,13 +295,13 @@ func (b *Buffer) writeUint16(val uint16) {
 	b.write(buf)
 }
 
-func (b *Buffer) writeXY(x, y meter.MM) {
+func (b *Buffer) writeXY(x, y unit.MM) {
 	b.writeFloat64(x.PT().Float64())
 	b.space()
 	b.writeFloat64(y.Abs().PT().Float64())
 }
 
-func (b *Buffer) writeWH(w, h meter.MM) {
+func (b *Buffer) writeWH(w, h unit.MM) {
 	b.writeFloat64(w.PT().Float64())
 	b.space()
 	b.writeFloat64(h.Neg().PT().Float64())

@@ -1,7 +1,6 @@
 package core
 
 import (
-	"log/slog"
 	"strconv"
 	"time"
 
@@ -32,6 +31,10 @@ func (core *Core) FinishDocument() {
 }
 
 func (core *Core) writeResources() {
+	if core.Err() != nil {
+		return
+	}
+
 	type fontResource struct {
 		alias  string
 		objNum int64
@@ -67,6 +70,10 @@ func (core *Core) writeResources() {
 }
 
 func (core *Core) writeFont(f *font.Font, alias string) int64 {
+	if core.Err() != nil {
+		return 0
+	}
+
 	b := core.mainBuffer
 	alias = "/" + alias
 
@@ -104,7 +111,14 @@ func (core *Core) writeFont(f *font.Font, alias string) int64 {
 	b.WriteFieldInt("/Length", cMapB.Len())
 	b.CloseObjectParameters()
 	b.StartStream()
-	b.ReadFrom(cMapB)
+
+	_, err := b.ReadFrom(cMapB)
+	if err != nil {
+		core.WriteError(err)
+
+		return 0
+	}
+
 	b.EndStream()
 	b.EndObj()
 
@@ -167,13 +181,12 @@ func (core *Core) writeFont(f *font.Font, alias string) int64 {
 	if !ok {
 		subset, err := f.Subset()
 		if err != nil {
-			// TODO: errors
-			core.log.Debug("error reading data from font", slog.String("err", err.Error()))
+			return 0
 		}
 
 		fontCompressedBytes, err = core.compressor.Compress(subset)
 		if err != nil {
-			core.log.Debug("error reading data from font", slog.String("err", err.Error()))
+			return 0
 		}
 
 		f.SaveCompressedBytes(fontCompressedBytes)
@@ -188,7 +201,12 @@ func (core *Core) writeFont(f *font.Font, alias string) int64 {
 	b.WriteFieldInt("/Length1", len(fontBytes))
 	b.CloseObjectParameters()
 	b.StartStream()
-	b.Write(fontCompressedBytes)
+
+	_, err = b.Write(fontCompressedBytes)
+	if err != nil {
+		return 0
+	}
+
 	b.EndStream()
 	b.EndObj()
 
@@ -196,6 +214,10 @@ func (core *Core) writeFont(f *font.Font, alias string) int64 {
 }
 
 func (core *Core) writePages() {
+	if core.Err() != nil {
+		return
+	}
+
 	b := core.mainBuffer
 
 	core.setObject(objNumPages)
@@ -211,6 +233,10 @@ func (core *Core) writePages() {
 }
 
 func (core *Core) writePage() {
+	if core.Err() != nil {
+		return
+	}
+
 	b := core.mainBuffer
 	pageObjNum := core.newObject()
 
@@ -225,7 +251,12 @@ func (core *Core) writePage() {
 
 	objNum := core.newObject()
 
-	compressed, _ := core.compressor.Compress(core.pageBuffer.Bytes())
+	compressed, err := core.compressor.Compress(core.page.buffer.Bytes())
+	if err != nil {
+		core.WriteError(err)
+
+		return
+	}
 
 	b.StartObj(objNum)
 	b.OpenObjectParameters()
@@ -233,7 +264,14 @@ func (core *Core) writePage() {
 	b.WriteFieldInt("/Length", len(compressed))
 	b.CloseObjectParameters()
 	b.StartStream()
-	b.Write(compressed)
+
+	_, err = b.Write(compressed)
+	if err != nil {
+		core.WriteError(err)
+
+		return
+	}
+
 	b.EndStream()
 	b.EndObj()
 
@@ -241,11 +279,19 @@ func (core *Core) writePage() {
 }
 
 func (core *Core) writeFileHeader() {
+	if core.Err() != nil {
+		return
+	}
+
 	core.mainBuffer.WriteStringLn("%PDF-1.6")
 	core.mainBuffer.WriteStringLn("%\x80\x80\x80\x80")
 }
 
 func (core *Core) writeInfo() int64 {
+	if core.Err() != nil {
+		return 0
+	}
+
 	creationDate := time.Now().Format("D:20060102150405-07'00'")
 
 	b := core.mainBuffer
@@ -262,6 +308,10 @@ func (core *Core) writeInfo() int64 {
 }
 
 func (core *Core) writeCatalog() int64 {
+	if core.Err() != nil {
+		return 0
+	}
+
 	b := core.mainBuffer
 	objNum := core.newObject()
 
@@ -276,6 +326,10 @@ func (core *Core) writeCatalog() int64 {
 }
 
 func (core *Core) writeXref() int {
+	if core.Err() != nil {
+		return 0
+	}
+
 	xrefOffset := core.mainBuffer.Len()
 
 	b := core.mainBuffer
@@ -295,6 +349,10 @@ func (core *Core) writeXref() int {
 }
 
 func (core *Core) writeTrailer(root, info int64) {
+	if core.Err() != nil {
+		return
+	}
+
 	b := core.mainBuffer
 
 	b.WriteStringLn("trailer")
@@ -306,6 +364,10 @@ func (core *Core) writeTrailer(root, info int64) {
 }
 
 func (core *Core) writeEOF(xrefOffset int) {
+	if core.Err() != nil {
+		return
+	}
+
 	b := core.mainBuffer
 
 	b.WriteStringLn("startxref")

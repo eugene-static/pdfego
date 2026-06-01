@@ -29,7 +29,7 @@ func main() {
 		log.Fatal(err)
 	}
 
-	upd := upd.NewUPD(83000)
+	upd := upd.NewUPD(5)
 
 	var memBefore runtime.MemStats
 	runtime.ReadMemStats(&memBefore)

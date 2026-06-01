@@ -135,8 +135,8 @@ func NewUPD(detailsNum int) UPD {
 }
 
 func (upd UPD) OrderedRow(index int) []string {
-	upd.DetailsOrdered[0] = upd.Details[index].Number
-	upd.DetailsOrdered[1] = upd.Details[index].Code
+	upd.DetailsOrdered[0] = upd.Details[index].Code
+	upd.DetailsOrdered[1] = upd.Details[index].Number
 	upd.DetailsOrdered[2] = upd.Details[index].Title
 	upd.DetailsOrdered[3] = upd.Details[index].KindID
 	upd.DetailsOrdered[4] = upd.Details[index].OkeiID
