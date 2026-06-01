@@ -5,8 +5,8 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/eugene-static/pdf-craft/buffer"
-	"github.com/eugene-static/pdf-craft/font"
+	"github.com/eugene-static/pdf-craft/internal/buffer"
+	"github.com/eugene-static/pdf-craft/internal/font"
 )
 
 const (
@@ -15,12 +15,11 @@ const (
 )
 
 func (core *Core) StartDocument() {
-	//core.mainBuffer = buffer.New()
 	core.writeFileHeader()
 }
 
 func (core *Core) FinishDocument() {
-	core.WritePage()
+	core.writePage()
 	core.writePages()
 	core.writeResources()
 
@@ -71,7 +70,7 @@ func (core *Core) writeFont(f *font.Font, alias string) int64 {
 	b := core.mainBuffer
 	alias = "/" + alias
 
-	cMapB := buffer.New(1024)
+	cMapB := buffer.New(1 << 10)
 
 	glyphs := f.Glyphs()
 
@@ -98,9 +97,9 @@ func (core *Core) writeFont(f *font.Font, alias string) int64 {
 
 	// ---------- (CMap) ----------
 	// "8 0 obj << /Length %length >> stream ... endstream endobj\n"
-	cMapOnjNum := core.newObject()
+	cMapObjNum := core.newObject()
 
-	b.StartObj(cMapOnjNum)
+	b.StartObj(cMapObjNum)
 	b.OpenObjectParameters()
 	b.WriteFieldInt("/Length", cMapB.Len())
 	b.CloseObjectParameters()
@@ -120,7 +119,7 @@ func (core *Core) writeFont(f *font.Font, alias string) int64 {
 	b.WriteFieldString("/BaseFont", alias)
 	b.WriteFieldString("/Encoding", "/Identity-H")
 	b.WriteRefArray("/DescendantFonts", []int64{fontNum + 1})
-	b.WriteRef("/ToUnicode", cMapOnjNum)
+	b.WriteRef("/ToUnicode", cMapObjNum)
 	b.CloseObjectParameters()
 	b.EndObj()
 
@@ -164,20 +163,32 @@ func (core *Core) writeFont(f *font.Font, alias string) int64 {
 	// "12 0 obj<< /Length %font_bytes_length /Length1 %font_bytes_length >>stream\nfont_bytes\nendstream\nendobj\n"
 	objNum = core.newObject()
 
-	data, l, err := f.Data(core.compressor)
-	if err != nil {
-		// TODO: errors
-		core.log.Debug("error reading data from font", slog.String("err", err.Error()))
+	fontCompressedBytes, ok := f.CompressedBytes()
+	if !ok {
+		subset, err := f.Subset()
+		if err != nil {
+			// TODO: errors
+			core.log.Debug("error reading data from font", slog.String("err", err.Error()))
+		}
+
+		fontCompressedBytes, err = core.compressor.Compress(subset)
+		if err != nil {
+			core.log.Debug("error reading data from font", slog.String("err", err.Error()))
+		}
+
+		f.SaveCompressedBytes(fontCompressedBytes)
 	}
+
+	fontBytes := f.Bytes()
 
 	b.StartObj(objNum)
 	b.OpenObjectParameters()
 	b.WriteFieldString("/Filter", "/FlateDecode")
-	b.WriteFieldInt("/Length", len(data))
-	b.WriteFieldInt("/Length1", l)
+	b.WriteFieldInt("/Length", len(fontCompressedBytes))
+	b.WriteFieldInt("/Length1", len(fontBytes))
 	b.CloseObjectParameters()
 	b.StartStream()
-	b.Write(data)
+	b.Write(fontCompressedBytes)
 	b.EndStream()
 	b.EndObj()
 
@@ -199,7 +210,7 @@ func (core *Core) writePages() {
 	b.EndObj()
 }
 
-func (core *Core) WritePage() {
+func (core *Core) writePage() {
 	b := core.mainBuffer
 	pageObjNum := core.newObject()
 
@@ -227,7 +238,6 @@ func (core *Core) WritePage() {
 	b.EndObj()
 
 	core.pageObjs = append(core.pageObjs, pageObjNum)
-	core.pageBuffer.Reset()
 }
 
 func (core *Core) writeFileHeader() {

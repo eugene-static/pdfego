@@ -6,7 +6,7 @@ import (
 	"os"
 	"testing"
 
-	"github.com/eugene-static/pdf-craft/core"
+	"github.com/eugene-static/pdf-craft/internal/core/core"
 )
 
 func BenchmarkUPD_FillTemplate(b *testing.B) {

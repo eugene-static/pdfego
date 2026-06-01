@@ -8,7 +8,7 @@ import (
 	"runtime"
 	"time"
 
-	"github.com/eugene-static/pdf-craft/core"
+	"github.com/eugene-static/pdf-craft/internal/core/core"
 	"github.com/eugene-static/pdf-craft/upd"
 )
 

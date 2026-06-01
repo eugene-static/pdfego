@@ -1,8 +1,8 @@
 package upd
 
 import (
-	"github.com/eugene-static/pdf-craft/core"
-	"github.com/eugene-static/pdf-craft/meter"
+	"github.com/eugene-static/pdf-craft/internal/core/core"
+	"github.com/eugene-static/pdf-craft/pkg/meter"
 	tmpl "github.com/eugene-static/pdf-craft/template"
 )
 

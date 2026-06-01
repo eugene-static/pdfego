@@ -6,7 +6,7 @@ import (
 	"os"
 	"slices"
 
-	"github.com/eugene-static/pdf-craft/meter"
+	"github.com/eugene-static/pdf-craft/pkg/meter"
 	"golang.org/x/image/font/sfnt"
 	"golang.org/x/image/math/fixed"
 )
@@ -34,14 +34,15 @@ type Glyph struct {
 // Metrics содержит параметры шрифта. Визуальное представление можно найти здесь:
 // https://developer.apple.com/library/mac/documentation/TextFonts/Conceptual/CocoaTextArchitecture/Art/glyph_metrics_2x.png
 //
-// Ниже представлены значения для LiberationSans-Regular.ttf
-// /Flags 4
-// /FontBBox [-203 -303 1050 910]
-// /ItalicAngle 0
-// /Ascent 905
-// /Descent -212
-// /CapHeight 688
-// /StemV 569
+// Ниже представлены значения для LiberationSans-Regular.ttf:
+//
+//	/Flags 4
+//	/FontBBox [-203 -303 1050 910]
+//	/ItalicAngle 0
+//	/Ascent 905
+//	/Descent -212
+//	/CapHeight 688
+//	/StemV 80
 type Metrics struct {
 	Ascent    int
 	Descent   int
@@ -52,6 +53,7 @@ type Metrics struct {
 }
 
 type fontManager struct {
+	faceBuffer     *sfnt.Buffer
 	textBuffer     []rune
 	glyphsCache    map[rune]Glyph
 	glyphFastCache []Glyph
@@ -59,7 +61,7 @@ type fontManager struct {
 	dirtyFlag      bool
 }
 
-func NewFont(path, alias string) (*Font, error) {
+func New(path, alias string) (*Font, error) {
 	fontBytes, err := os.ReadFile(path)
 	if err != nil {
 		return nil, err
@@ -132,6 +134,7 @@ func NewFont(path, alias string) (*Font, error) {
 		rawData: fontBytes,
 		metrics: metrics,
 		manager: fontManager{
+			faceBuffer:     &buf,
 			glyphsCache:    make(map[rune]Glyph),
 			glyphFastCache: make([]Glyph, 1200),
 		},
@@ -171,59 +174,27 @@ func (f *Font) Metrics() Metrics {
 	return f.metrics
 }
 
-type compressor interface {
-	Compress(buf []byte) ([]byte, error)
+func (f *Font) Bytes() []byte {
+	return f.rawData
 }
 
-func (f *Font) Data(comp compressor) (data []byte, uncompressedLen int, err error) {
-	uncompressedLen = len(f.rawData)
+func (f *Font) CompressedBytes() ([]byte, bool) {
+	return f.compressedData, !f.manager.dirtyFlag
+}
 
-	if !f.manager.dirtyFlag {
-		return f.compressedData, uncompressedLen, nil
-	}
-
+func (f *Font) Subset() ([]byte, error) {
 	subset, err := f.ttfSubset()
 	if err != nil {
-		return nil, 0, err
+		return nil, err
 	}
 
-	compressedData, err := comp.Compress(subset)
-	if err != nil {
-		return nil, 0, err
-	}
-
-	f.compressedData = compressedData
-	f.manager.dirtyFlag = false
-
-	return compressedData, uncompressedLen, nil
+	return subset, nil
 }
 
-func (f *Font) saveRune(r rune) {
-	if r < 1200 && f.manager.glyphFastCache[r].rune > 0 {
-		return
-	}
+func (f *Font) SaveCompressedBytes(data []byte) {
+	f.compressedData = data
 
-	_, ok := f.manager.glyphsCache[r]
-	if ok {
-		return
-	}
-
-	if r == '\n' {
-		return
-	}
-
-	buf := new(sfnt.Buffer)
-
-	gid, _ := f.face.GlyphIndex(buf, r) //err is always nil
-
-	adv, err := f.face.GlyphAdvance(buf, gid, f.metrics.Ppem, hintingNone)
-	if err != nil {
-		adv = 600
-	}
-
-	f.manager.addGlyph(r, gid, adv)
-
-	f.manager.dirtyFlag = true
+	f.manager.dirtyFlag = false
 }
 
 func (f *Font) MeasureText(fontSize meter.PT, text []rune, start, end int) meter.PT {
@@ -262,7 +233,7 @@ func (f *Font) MeasureText(fontSize meter.PT, text []rune, start, end int) meter
 	return width
 }
 
-func (f *Font) FullText(text string, size meter.PT) Segment {
+func (f *Font) FullText(text string, size meter.PT) Text {
 	f.manager.textBuffer = f.manager.textBuffer[:0]
 
 	for _, r := range text {
@@ -272,13 +243,13 @@ func (f *Font) FullText(text string, size meter.PT) Segment {
 
 	textWidth := f.MeasureText(size, f.manager.textBuffer, 0, len(text))
 
-	return Segment{
-		text:  text,
+	return Text{
+		data:  text,
 		width: textWidth.MM(),
 	}
 }
 
-func (f *Font) SplitText(text string, size meter.PT, width meter.MM, buf []Segment) []Segment {
+func (f *Font) SplitText(text string, size meter.PT, width meter.MM, buf []Text) []Text {
 	segments := buf[:0]
 	f.manager.textBuffer = f.manager.textBuffer[:0]
 	targetWidth := width.PT()
@@ -298,8 +269,8 @@ func (f *Font) SplitText(text string, size meter.PT, width meter.MM, buf []Segme
 	textWidth := f.MeasureText(size, f.manager.textBuffer, lineStart, lineEnd)
 
 	if start >= len(f.manager.textBuffer) {
-		segments = append(segments, Segment{
-			text:  string(f.manager.textBuffer),
+		segments = append(segments, Text{
+			data:  string(f.manager.textBuffer),
 			width: textWidth.MM(),
 		})
 
@@ -326,8 +297,8 @@ func (f *Font) SplitText(text string, size meter.PT, width meter.MM, buf []Segme
 		candidateWidth := f.MeasureText(size, f.manager.textBuffer, lineStart, wordEnd)
 
 		if candidateWidth > targetWidth || f.manager.textBuffer[lineEnd] == '\n' {
-			segments = append(segments, Segment{
-				text:  string(f.manager.textBuffer[lineStart:lineEnd]),
+			segments = append(segments, Text{
+				data:  string(f.manager.textBuffer[lineStart:lineEnd]),
 				width: textWidth.MM(),
 			})
 
@@ -345,13 +316,44 @@ func (f *Font) SplitText(text string, size meter.PT, width meter.MM, buf []Segme
 	if lineStart < len(f.manager.textBuffer) {
 		lineWidth := f.MeasureText(size, f.manager.textBuffer, lineStart, lineEnd)
 
-		segments = append(segments, Segment{
-			text:  string(f.manager.textBuffer[lineStart:lineEnd]),
+		segments = append(segments, Text{
+			data:  string(f.manager.textBuffer[lineStart:lineEnd]),
 			width: lineWidth.MM(),
 		})
 	}
 
 	return segments
+}
+
+func (f *Font) saveRune(r rune) {
+	if r < 1200 && f.manager.glyphFastCache[r].rune > 0 {
+		return
+	}
+
+	_, ok := f.manager.glyphsCache[r]
+	if ok {
+		return
+	}
+
+	if r == '\n' {
+		return
+	}
+
+	gid, _ := f.face.GlyphIndex(f.manager.faceBuffer, r) //err is always nil
+
+	adv, err := f.face.GlyphAdvance(
+		f.manager.faceBuffer,
+		gid,
+		f.metrics.Ppem,
+		hintingNone,
+	)
+	if err != nil {
+		adv = 600
+	}
+
+	f.manager.addGlyph(r, gid, adv)
+
+	f.manager.dirtyFlag = true
 }
 
 func (g *Glyph) Index() uint16 {

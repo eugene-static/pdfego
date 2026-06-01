@@ -5,8 +5,8 @@ import (
 	"slices"
 	"strconv"
 
-	"github.com/eugene-static/pdf-craft/font"
-	"github.com/eugene-static/pdf-craft/meter"
+	"github.com/eugene-static/pdf-craft/internal/font"
+	"github.com/eugene-static/pdf-craft/pkg/meter"
 )
 
 type Buffer struct {

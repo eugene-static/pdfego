@@ -52,7 +52,7 @@ package _dev
 //	pdf.AddUTF8Font("NotoSerif", "B", "./fonts/NotoSerifSC-ExtraBold.ttf")
 //	pdf.SetFont("NotoSerif", "", mainFontSize)
 //	pdf.SetMargins(margin, margin, -1)
-//	pdf.AddPage()
+//	pdf.NewPage()
 //
 //	tmpl.TitleHeader()
 //	tmpl.Header()

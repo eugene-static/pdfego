@@ -4,10 +4,10 @@ import (
 	"log/slog"
 	"slices"
 
-	"github.com/eugene-static/pdf-craft/buffer"
-	"github.com/eugene-static/pdf-craft/core"
-	"github.com/eugene-static/pdf-craft/font"
-	"github.com/eugene-static/pdf-craft/meter"
+	"github.com/eugene-static/pdf-craft/internal/buffer"
+	"github.com/eugene-static/pdf-craft/internal/core/core"
+	"github.com/eugene-static/pdf-craft/internal/font"
+	"github.com/eugene-static/pdf-craft/pkg/meter"
 )
 
 const (
@@ -56,8 +56,8 @@ type Row struct {
 type cell struct {
 	id          uint8
 	font        *font.Font
-	textWrapped []font.Segment
-	//textSpace   [1]font.Segment
+	textWrapped []font.Text
+	//textSpace   [1]font.Text
 	width      meter.MM
 	height     meter.MM
 	fontSize   meter.PT
@@ -212,7 +212,7 @@ func (r *Row) Debug() {
 }
 
 func (r *Row) newCell(c *cell, text string, opts *CellOpts) {
-	c.textWrapped = make([]font.Segment, 0, 10)
+	c.textWrapped = make([]font.Text, 0, 10)
 	c.font = r.core.Font(core.FontRegular)
 	c.fontSize = r.core.DefaultFontSize()
 	c.borderSize = r.core.BorderThin()
@@ -229,8 +229,6 @@ func (r *Row) newCell(c *cell, text string, opts *CellOpts) {
 	if c.wrapped {
 		c.textWrapped = append(c.textWrapped, c.font.SplitText(text, c.fontSize, c.width, c.textWrapped)...)
 	} else {
-		//c.textWrapped = c.textSpace[:1]
-		//c.textWrapped = append(c.textWrapped, font.Segment{})
 		c.textWrapped = append(c.textWrapped, c.font.FullText(text, c.fontSize))
 	}
 }
@@ -249,9 +247,7 @@ func (r *Row) updateCell(c *cell, text string) {
 	if c.wrapped {
 		c.textWrapped = append(c.textWrapped, c.font.SplitText(text, c.fontSize, c.width, c.textWrapped)...)
 	} else {
-		//c.textWrapped = c.textSpace[:1]
-		c.textWrapped = append(c.textWrapped, font.Segment{})
-		c.textWrapped[0] = c.font.FullText(text, c.fontSize)
+		c.textWrapped = append(c.textWrapped, c.font.FullText(text, c.fontSize))
 	}
 
 	calcHeight := meter.FontHeight(c.fontSize) * meter.MM(len(c.textWrapped))
@@ -390,7 +386,7 @@ func (c *cell) setOpts(core *core.Core, opts *CellOpts) {
 func (c *cell) textSegments() []string {
 	return slices.Collect(func(yield func(text string) bool) {
 		for _, t := range c.textWrapped {
-			yield(t.Text())
+			yield(t.Data())
 		}
 	})
 }
@@ -422,7 +418,7 @@ func (c *cell) render(buf *buffer.Buffer, x, y meter.MM) {
 		cx := x + dx
 		cy := y + dy
 
-		buf.WriteText(c.font, cx, cy, c.textWrapped[i].Text())
+		buf.WriteText(c.font, cx, cy, c.textWrapped[i].Data())
 	}
 
 	buf.WriteStringLn("ET")
@@ -499,11 +495,11 @@ func (c *cell) renderBorder(buf *buffer.Buffer, x, y meter.MM) {
 	}
 }
 
-func (c *cell) textDx(f *font.Font, seg font.Segment) (dx meter.MM) {
+func (c *cell) textDx(f *font.Font, seg font.Text) (dx meter.MM) {
 	textWidth := seg.Width()
 
 	if textWidth == 0 {
-		text := []rune(seg.Text())
+		text := []rune(seg.Data())
 		textWidth = f.MeasureText(c.fontSize, text, 0, len(text)).MM()
 	}
 

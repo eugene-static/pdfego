@@ -1,8 +1,8 @@
 package core
 
 import (
-	"github.com/eugene-static/pdf-craft/buffer"
-	"github.com/eugene-static/pdf-craft/meter"
+	"github.com/eugene-static/pdf-craft/internal/buffer"
+	"github.com/eugene-static/pdf-craft/pkg/meter"
 )
 
 type Page struct {
@@ -15,8 +15,8 @@ func (p Page) X0Y0() (meter.MM, meter.MM) {
 	return p.margin, p.margin - p.height
 }
 
-func (p Page) Margin() meter.MM {
-	return p.margin
+func (p Page) IsBelowBottomBorder(y meter.MM) bool {
+	return y+p.margin > 0
 }
 
 func (core *Core) Page() Page {
@@ -27,7 +27,12 @@ func (core *Core) SetMargin(margin float64) {
 	core.page.margin = meter.MM(margin)
 }
 
-func (core *Core) AddPage() *buffer.Buffer {
+func (core *Core) NewPage() *buffer.Buffer {
+	if core.pageBuffer.Len() > 0 {
+		core.writePage()
+		core.pageBuffer.Reset()
+	}
+
 	if core.headBuffer != nil && core.headBuffer.Len() > 0 {
 		core.pageBuffer.Write(core.headBuffer.Bytes())
 	}

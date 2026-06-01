@@ -1,9 +1,9 @@
 package template
 
 import (
-	"github.com/eugene-static/pdf-craft/buffer"
-	"github.com/eugene-static/pdf-craft/core"
-	"github.com/eugene-static/pdf-craft/meter"
+	"github.com/eugene-static/pdf-craft/internal/buffer"
+	core2 "github.com/eugene-static/pdf-craft/internal/core/core"
+	"github.com/eugene-static/pdf-craft/pkg/meter"
 )
 
 const (
@@ -14,9 +14,9 @@ const (
 )
 
 type Template struct {
-	core    *core.Core
+	core    *core2.Core
 	buf     *buffer.Buffer
-	page    core.Page
+	page    core2.Page
 	block   Block
 	ordered Ordered
 	x0      meter.MM
@@ -25,9 +25,9 @@ type Template struct {
 	y       meter.MM
 }
 
-func New(core *core.Core) *Template {
+func New(core *core2.Core) *Template {
 	core.StartDocument()
-	buf := core.AddPage()
+	buf := core.NewPage()
 	page := core.Page()
 	x0, y0 := page.X0Y0()
 
@@ -49,13 +49,13 @@ func (t *Template) Render() {
 
 type Block struct {
 	profile byte
-	core    *core.Core
+	core    *core2.Core
 	slots   []Slot
 	opts    Options
 }
 
 type Slot struct {
-	core   *core.Core
+	core   *core2.Core
 	blocks []Block
 	table  *Table
 	opts   Options
@@ -212,9 +212,8 @@ func (t *Template) render() {
 		_, t.y0 = t.page.X0Y0()
 	}
 
-	if t.y+height+t.page.Margin() > 0 {
-		t.core.WritePage()
-		t.core.AddPage()
+	if t.page.IsBelowBottomBorder(t.y + height) {
+		t.core.NewPage()
 		t.x, t.y = t.x0, t.y0
 	}
 
