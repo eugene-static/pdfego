@@ -1,4 +1,4 @@
-package template
+package pdf_craft
 
 import (
 	"github.com/eugene-static/pdf-craft/internal/buffer"
@@ -64,7 +64,7 @@ func renderBorder(buf *buffer.Buffer, x, y, w, h unit.MM, borderMask uint8, bord
 	if borderMask&borderAll == borderAll && (borderMask^borderAll == thickAll || borderMask^borderAll == 0) {
 		bs := borderSize
 		if borderMask&thickAll == thickAll {
-			bs *= 4
+			bs *= 3
 		}
 
 		buf.WriteRect(bs, x, y, w, h)
@@ -75,7 +75,7 @@ func renderBorder(buf *buffer.Buffer, x, y, w, h unit.MM, borderMask uint8, bord
 	if borderMask&borderLeft != 0 {
 		bs := borderSize
 		if borderMask&thickLeft != 0 {
-			bs *= 4
+			bs *= 3
 		}
 
 		x0 = x
@@ -89,7 +89,7 @@ func renderBorder(buf *buffer.Buffer, x, y, w, h unit.MM, borderMask uint8, bord
 	if borderMask&borderRight != 0 {
 		bs := borderSize
 		if borderMask&thickRight != 0 {
-			bs *= 4
+			bs *= 3
 		}
 
 		x0 = x + w
@@ -103,7 +103,7 @@ func renderBorder(buf *buffer.Buffer, x, y, w, h unit.MM, borderMask uint8, bord
 	if borderMask&borderTop != 0 {
 		bs := borderSize
 		if borderMask&thickTop != 0 {
-			bs *= 4
+			bs *= 3
 		}
 
 		x0 = x
@@ -117,7 +117,7 @@ func renderBorder(buf *buffer.Buffer, x, y, w, h unit.MM, borderMask uint8, bord
 	if borderMask&borderBottom != 0 {
 		bs := borderSize
 		if borderMask&thickBottom != 0 {
-			bs *= 4
+			bs *= 3
 		}
 
 		x0 = x

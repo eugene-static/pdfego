@@ -1,8 +1,8 @@
-package template
+package pdf_craft
 
 import (
 	"github.com/eugene-static/pdf-craft/internal/buffer"
-	"github.com/eugene-static/pdf-craft/internal/core/core"
+	"github.com/eugene-static/pdf-craft/internal/core"
 	"github.com/eugene-static/pdf-craft/pkg/unit"
 )
 
@@ -95,7 +95,7 @@ func (c *Constructor) Repeater(ordered Ordered) *Constructor {
 	return c
 }
 
-func (c *Constructor) Repeat(blockFunc func(*Block, []string)) {
+func (c *Constructor) Add(blockFunc func(*Block, []string)) {
 	ordered := c.ordered.OrderedRow(0)
 
 	blockFunc(&c.block, ordered)
@@ -236,7 +236,7 @@ func (s *Slot) render(buf *buffer.Buffer, x, y unit.MM) {
 			width := s.width()
 			height := s.height() + s.opts.IndentTop
 
-			borderSize := s.core.BorderThin()
+			borderSize := s.core.DefaultBorderSize()
 			if s.opts.BorderSize > 0 {
 				borderSize = s.opts.BorderSize
 			}

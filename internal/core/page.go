@@ -8,9 +8,14 @@ import (
 type Page struct {
 	buffer       *buffer.Buffer
 	headerBuffer *buffer.Buffer
+	footerBuffer *buffer.Buffer
 	width        unit.MM
 	height       unit.MM
 	margin       unit.MM
+	marginLeft   unit.MM
+	marginRight  unit.MM
+	marginTop    unit.MM
+	marginBottom unit.MM //TODO:
 }
 
 func (p *Page) X0Y0() (unit.MM, unit.MM) {
@@ -52,14 +57,6 @@ func (p *Page) AddHeader() *buffer.Buffer {
 
 func (p *Page) RemoveHeader() {
 	p.headerBuffer.Reset()
-}
-
-func (core *Core) Page() Page {
-	return core.page
-}
-
-func (core *Core) SetMargin(margin unit.MM) {
-	core.page.margin = margin
 }
 
 func (core *Core) RenderPage() {

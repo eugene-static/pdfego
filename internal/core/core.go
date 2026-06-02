@@ -25,34 +25,16 @@ const (
 type Core struct {
 	log        *slog.Logger
 	mainBuffer *buffer.Buffer
-	//headBuffer *buffer.Buffer
-	//pageBuffer *buffer.Buffer
-	compressor compressor
-	cursor     cursor
-	page       Page
-	border     border
 	fonts      map[string]*font.Font
+	compressor compressor
+	page       Page
 	fontSize   unit.PT
-	//compress   bool
+	borderSize unit.PT
+	compress   bool
 	pagesCount int64
-	cellCount  int
 	offsets    []int
 	pageObjs   []int64
 	error      error
-}
-
-type cursor struct {
-	x, y float64
-}
-
-type border struct {
-	thin  unit.PT
-	thick unit.PT
-}
-
-type compressor struct {
-	buffer *buffer.Buffer
-	writer *zlib.Writer
 }
 
 func New(orientation string) *Core {
@@ -76,7 +58,6 @@ func New(orientation string) *Core {
 
 	return &Core{
 		mainBuffer: buffer.New(bufferSize),
-		//pageBuffer: buffer.New(1 << 16),
 		compressor: comp,
 		fonts:      make(map[string]*font.Font),
 		page:       pg,
@@ -92,20 +73,13 @@ func (core *Core) Err() error {
 	return core.error
 }
 
-func (core *Core) SetBorders(thin, thick float64) {
-	core.border = border{
-		thin:  unit.PT(thin),
-		thick: unit.PT(thick),
-	}
+func (core *Core) Compress() {
+	core.compress = true
 }
 
 func (core *Core) SetLogger(log *slog.Logger) {
 	core.log = log
 }
-
-//func (core *Core) Compress() {
-//	core.compress = true
-//}
 
 func (core *Core) SetFont(path, alias string) error {
 	f, err := font.New(path, alias)
@@ -140,20 +114,20 @@ func (core *Core) SetDefaultFontSize(fontSize int) {
 	core.fontSize = unit.PT(fontSize)
 }
 
-func (core *Core) IncreaseCellsCount(n int) {
-	core.cellCount += n
+func (core *Core) SetDefaultBorderSize(size unit.PT) {
+	core.borderSize = size
+}
+
+func (core *Core) SetMargin(margin unit.MM) {
+	core.page.margin = margin
 }
 
 func (core *Core) DefaultFontSize() unit.PT {
 	return core.fontSize
 }
 
-func (core *Core) BorderThin() unit.PT {
-	return core.border.thin
-}
-
-func (core *Core) BorderThick() unit.PT {
-	return core.border.thick
+func (core *Core) DefaultBorderSize() unit.PT {
+	return core.borderSize
 }
 
 func (core *Core) Bytes() []byte {
@@ -164,6 +138,10 @@ func (core *Core) Bytes() []byte {
 func (core *Core) Font(alias string) *font.Font {
 
 	return core.fonts[alias]
+}
+
+func (core *Core) Page() Page {
+	return core.page
 }
 
 func (core *Core) Log() *slog.Logger {
@@ -186,12 +164,9 @@ func (core *Core) setObject(objNum int) {
 	core.offsets[objNum] = xLen
 }
 
-func (core *Core) fontRegular() *font.Font {
-	return core.fonts[FontRegular]
-}
-
-func (core *Core) fontBold() *font.Font {
-	return core.fonts[FontBold]
+type compressor struct {
+	buffer *buffer.Buffer
+	writer *zlib.Writer
 }
 
 func (comp compressor) Compress(buf []byte) ([]byte, error) {

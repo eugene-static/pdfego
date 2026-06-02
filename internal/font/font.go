@@ -34,12 +34,6 @@ type Font struct {
 	metrics        Metrics
 }
 
-type Glyph struct {
-	rune    uint16
-	index   sfnt.GlyphIndex
-	advance fixed.Int26_6
-}
-
 // Metrics содержит параметры шрифта. Визуальное представление можно найти здесь:
 // https://developer.apple.com/library/mac/documentation/TextFonts/Conceptual/CocoaTextArchitecture/Art/glyph_metrics_2x.png
 //
@@ -56,18 +50,9 @@ type Metrics struct {
 	FontBBox  []int
 	Ascent    int
 	Descent   int
-	CapHeight int
+	CapHeight fixed.Int26_6
 	StemV     int
 	Height    fixed.Int26_6
-}
-
-type fontManager struct {
-	faceBuffer     *sfnt.Buffer
-	textBuffer     []rune
-	glyphs         []Glyph
-	glyphFastCache []Glyph
-	glyphsCache    map[rune]Glyph
-	dirtyFlag      bool
 }
 
 func New(path, alias string) (*Font, error) {
@@ -89,9 +74,9 @@ func New(path, alias string) (*Font, error) {
 	}
 
 	height := sfntMetrics.Height
+	capHeight := sfntMetrics.CapHeight
 	ascent := sfntMetrics.Ascent.Round()
 	descent := sfntMetrics.Descent.Round()
-	capHeight := sfntMetrics.CapHeight.Round()
 
 	bounds, err := sfntFont.Bounds(buf, ppem, hintingNone)
 	if err != nil {
@@ -157,6 +142,10 @@ func (f *Font) Alias() string {
 
 func (f *Font) Height(size unit.PT) unit.PT {
 	return size * unit.PT(float64(f.metrics.Height)/float64(ppem))
+}
+
+func (f *Font) CapHeight(size unit.PT) unit.PT {
+	return size * unit.PT(float64(f.metrics.CapHeight)/float64(ppem))
 }
 
 func (f *Font) GID(r rune) uint16 {
@@ -374,6 +363,12 @@ func (f *Font) saveRune(r rune) {
 	f.manager.dirtyFlag = true
 }
 
+type Glyph struct {
+	rune    uint16
+	index   sfnt.GlyphIndex
+	advance fixed.Int26_6
+}
+
 func (g *Glyph) Index() uint16 {
 	return uint16(g.index)
 }
@@ -384,6 +379,15 @@ func (g *Glyph) Rune() uint16 {
 
 func (g *Glyph) Advance() int64 {
 	return int64(g.advance.Round())
+}
+
+type fontManager struct {
+	faceBuffer     *sfnt.Buffer
+	textBuffer     []rune
+	glyphs         []Glyph
+	glyphFastCache []Glyph
+	glyphsCache    map[rune]Glyph
+	dirtyFlag      bool
 }
 
 func (mgr *fontManager) addGlyph(r rune, gid sfnt.GlyphIndex, advance fixed.Int26_6) {
@@ -412,4 +416,21 @@ func (mgr *fontManager) wrapSymbols(index int) bool {
 		mgr.textBuffer[index] == splitTab ||
 		mgr.textBuffer[index] == splitNewline ||
 		mgr.textBuffer[index] == splitReturn
+}
+
+type Text struct {
+	data  string
+	width unit.MM
+}
+
+func (s *Text) Data() string {
+	return s.data
+}
+
+func (s *Text) Width() unit.MM {
+	return s.width
+}
+
+func Padding(fontSize unit.PT) unit.PT {
+	return fontSize / 7
 }

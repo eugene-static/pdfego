@@ -54,11 +54,3 @@ func (mm MM) Neg() (res MM) {
 
 	return res
 }
-
-func FontHeight(fontSize PT) MM {
-	return fontSize.MM() * 1.2 //TODO:
-}
-
-func Padding(fontSize PT) MM {
-	return fontSize.MM() / 7
-}

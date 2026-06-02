@@ -167,7 +167,7 @@ func (core *Core) writeFont(f *font.Font, alias string) int64 {
 	b.WriteFieldInt("/ItalicAngle", 0) //TODO: Italic Font
 	b.WriteFieldInt("/Ascent", metrics.Ascent)
 	b.WriteFieldInt("/Descent", metrics.Descent)
-	b.WriteFieldInt("/CapHeight", metrics.CapHeight)
+	b.WriteFieldInt("/CapHeight", metrics.CapHeight.Round())
 	b.WriteFieldInt("/StemV", metrics.StemV)
 	b.WriteRef("/FontFile2", objNum+1)
 	b.CloseObjectParameters()
@@ -177,22 +177,26 @@ func (core *Core) writeFont(f *font.Font, alias string) int64 {
 	// "12 0 obj<< /Length %font_bytes_length /Length1 %font_bytes_length >>stream\nfont_bytes\nendstream\nendobj\n"
 	objNum = core.newObject()
 
+	fontBytes := f.Bytes()
+
 	fontCompressedBytes, ok := f.CompressedBytes()
 	if !ok {
 		subset, err := f.Subset()
 		if err != nil {
+			core.WriteError(err)
+
 			return 0
 		}
 
 		fontCompressedBytes, err = core.compressor.Compress(subset)
 		if err != nil {
+			core.WriteError(err)
+
 			return 0
 		}
 
 		f.SaveCompressedBytes(fontCompressedBytes)
 	}
-
-	fontBytes := f.Bytes()
 
 	b.StartObj(objNum)
 	b.OpenObjectParameters()
@@ -251,21 +255,27 @@ func (core *Core) writePage() {
 
 	objNum := core.newObject()
 
-	compressed, err := core.compressor.Compress(core.page.buffer.Bytes())
-	if err != nil {
-		core.WriteError(err)
-
-		return
-	}
-
 	b.StartObj(objNum)
 	b.OpenObjectParameters()
-	b.WriteFieldString("/Filter", "/FlateDecode")
-	b.WriteFieldInt("/Length", len(compressed))
+
+	pageBytes := core.page.buffer.Bytes()
+	if core.compress {
+		compressed, err := core.compressor.Compress(core.page.buffer.Bytes())
+		if err != nil {
+			core.WriteError(err)
+
+			return
+		}
+
+		pageBytes = compressed
+		b.WriteFieldString("/Filter", "/FlateDecode")
+	}
+
+	b.WriteFieldInt("/Length", len(pageBytes))
 	b.CloseObjectParameters()
 	b.StartStream()
 
-	_, err = b.Write(compressed)
+	_, err := b.Write(pageBytes)
 	if err != nil {
 		core.WriteError(err)
 
