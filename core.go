@@ -1,8 +1,7 @@
-package core
+package pdf_craft
 
 import (
 	"compress/zlib"
-	"log/slog"
 
 	"github.com/eugene-static/pdf-craft/internal/buffer"
 	"github.com/eugene-static/pdf-craft/internal/font"
@@ -23,22 +22,21 @@ const (
 )
 
 type Core struct {
-	log        *slog.Logger
 	mainBuffer *buffer.Buffer
 	fonts      map[string]*font.Font
-	compressor compressor
-	page       Page
+	comp       compressor
+	page       page
 	fontSize   unit.PT
 	borderSize unit.PT
-	compress   bool
 	pagesCount int64
 	offsets    []int
 	pageObjs   []int64
+	compress   bool
 	error      error
 }
 
-func New(orientation string) *Core {
-	pg := Page{
+func NewCore(orientation string) *Core {
+	pg := page{
 		width:  unit.PT(595.2).MM(),
 		height: unit.PT(841.89).MM(),
 		buffer: buffer.New(bufferSize),
@@ -58,27 +56,15 @@ func New(orientation string) *Core {
 
 	return &Core{
 		mainBuffer: buffer.New(bufferSize),
-		compressor: comp,
+		comp:       comp,
 		fonts:      make(map[string]*font.Font),
 		page:       pg,
 		offsets:    offsets,
 	}
 }
 
-func (core *Core) WriteError(err error) {
-	core.error = err
-}
-
-func (core *Core) Err() error {
-	return core.error
-}
-
 func (core *Core) Compress() {
 	core.compress = true
-}
-
-func (core *Core) SetLogger(log *slog.Logger) {
-	core.log = log
 }
 
 func (core *Core) SetFont(path, alias string) error {
@@ -130,22 +116,22 @@ func (core *Core) DefaultBorderSize() unit.PT {
 	return core.borderSize
 }
 
-func (core *Core) Bytes() []byte {
+func (core *Core) writeError(err error) {
+	core.error = err
+}
+
+func (core *Core) err() error {
+	return core.error
+}
+
+func (core *Core) bytes() []byte {
 	defer core.mainBuffer.Reset()
 	return core.mainBuffer.Bytes()
 }
 
-func (core *Core) Font(alias string) *font.Font {
+func (core *Core) font(alias string) *font.Font {
 
 	return core.fonts[alias]
-}
-
-func (core *Core) Page() Page {
-	return core.page
-}
-
-func (core *Core) Log() *slog.Logger {
-	return core.log
 }
 
 func (core *Core) newObject() int64 {
@@ -164,12 +150,74 @@ func (core *Core) setObject(objNum int) {
 	core.offsets[objNum] = xLen
 }
 
+func (core *Core) newPage() {
+	if core.err() != nil {
+		return
+	}
+
+	if core.page.headerBuffer != nil && core.page.headerBuffer.Len() > 0 {
+		_, err := core.page.buffer.Write(core.page.headerBuffer.Bytes())
+		if err != nil {
+			core.writeError(err)
+
+			return
+		}
+	}
+
+	core.pagesCount++
+}
+
+func (core *Core) renderPage() {
+	if core.page.buffer.Len() > 0 {
+		core.writePage()
+	}
+}
+
+type page struct {
+	buffer       *buffer.Buffer
+	headerBuffer *buffer.Buffer
+	footerBuffer *buffer.Buffer
+	width        unit.MM
+	height       unit.MM
+	margin       unit.MM
+	marginLeft   unit.MM
+	marginRight  unit.MM
+	marginTop    unit.MM
+	marginBottom unit.MM //TODO:
+}
+
+func (p *page) x0y0() (unit.MM, unit.MM) {
+	return p.margin, p.margin - p.height
+}
+
+func (p *page) isBelowBottomBorder(y unit.MM) bool {
+	return y+p.margin > 0
+}
+
+func (p *page) newHeader() *buffer.Buffer {
+	if p.headerBuffer != nil {
+		p.headerBuffer.Reset()
+
+		return p.headerBuffer
+	}
+
+	buf := buffer.New(bufferSize)
+
+	p.headerBuffer = buf
+
+	return buf
+}
+
+func (p *page) removeHeader() {
+	p.headerBuffer.Reset()
+}
+
 type compressor struct {
 	buffer *buffer.Buffer
 	writer *zlib.Writer
 }
 
-func (comp compressor) Compress(buf []byte) ([]byte, error) {
+func (comp compressor) compress(buf []byte) ([]byte, error) {
 	comp.buffer.Reset()
 	comp.writer.Reset(comp.buffer)
 

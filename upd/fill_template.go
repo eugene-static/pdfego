@@ -2,11 +2,10 @@ package upd
 
 import (
 	"github.com/eugene-static/pdf-craft"
-	"github.com/eugene-static/pdf-craft/internal/core"
 	"github.com/eugene-static/pdf-craft/pkg/unit"
 )
 
-func (upd UPD) FillTemplate(c *core.Core) ([]byte, error) {
+func (upd UPD) fillTemplate(c *pdf_craft.Core) ([]byte, error) {
 	template := pdf_craft.New(c)
 
 	headBlock := template.Block()
@@ -24,15 +23,16 @@ func (upd UPD) FillTemplate(c *core.Core) ([]byte, error) {
 		Add(upd.numberHeader).
 		Add(upd.requisites)
 
+	tableColumns := []unit.MM{21, 7, 83, 7, 7, 10, 15, 15, 20, 13, 13, 20, 20, 8, 10, 22}
+
 	template.Block().
-		Slot().
-		Add(tableHeader)
+		Add(tableHeader(tableColumns))
 
 	template.Header().
-		Add(tableNumberHeader)
+		Add(tableNumberHeader(tableColumns))
 
 	template.Repeater(upd).
-		Add(tableDetails)
+		AddRepeater(tableDetails(tableColumns))
 
 	template.Render()
 
@@ -43,7 +43,7 @@ func (upd UPD) titleHeader(slot *pdf_craft.Slot) {
 	table := slot.Table(3, []unit.MM{15, 5})
 
 	table.Row().
-		Cell("Универсальный передаточный документ", pdf_craft.CellOptions{Height: 10, Wrap: true, Colspan: 2, Align: "LT", Border: "lt"})
+		Cell("Универсальный передаточный документ", pdf_craft.CellOptions{Height: 10, Wrap: true, Colspan: 2, Align: "LT"})
 	table.Row().
 		Cell("Статус", pdf_craft.CellOptions{Height: 5, Align: "LM"}).
 		Cell("1", pdf_craft.CellOptions{Height: 5, Align: "CM", Border: "O"})
@@ -166,94 +166,100 @@ func (upd UPD) requisites(slot *pdf_craft.Slot) {
 		Paragraph("(8)")
 }
 
-func tableHeader(slot *pdf_craft.Slot) {
-	table := slot.Table(2, []unit.MM{21, 7, 83, 7, 7, 10, 15, 15, 20, 13, 13, 20, 20, 8, 10, 22})
+func tableHeader(columns []unit.MM) func(block *pdf_craft.Block) {
+	return func(block *pdf_craft.Block) {
+		table := block.Slot().Table(2, columns)
 
-	optsBounded := pdf_craft.CellOptions{
-		Height: 15,
-		Align:  "CM",
-		Border: "o",
-		Wrap:   true,
+		optsBounded := pdf_craft.CellOptions{
+			Height: 15,
+			Align:  "CM",
+			Border: "o",
+			Wrap:   true,
+		}
+
+		optsBoundedRS2 := pdf_craft.CellOptions{
+			Border:  "o",
+			Wrap:    true,
+			Rowspan: 2,
+		}
+
+		optsBoundedCS2 := pdf_craft.CellOptions{
+			Align:   "CM",
+			Border:  "o",
+			Wrap:    true,
+			Colspan: 2,
+		}
+
+		table.Row().
+			Cell("Код\nтовара/работ, услуг", pdf_craft.CellOptions{Height: 10, Border: "tblR", Wrap: true, Rowspan: 2}).
+			Cell("№\nп/п", optsBoundedRS2).
+			Cell("Наименование товара\n(описание выполненных работ, оказанных услуг),\nимущественного права", optsBoundedRS2).
+			Cell("Код\nвида\nтовара", optsBoundedRS2).
+			Cell("Единица\nизмерения", optsBoundedCS2).
+			Cell("Количество\n(объем)", optsBoundedRS2).
+			Cell("Цена\n(тариф) за\nединицу\nизмерения", optsBoundedRS2).
+			Cell("Стоимость\nтоваров (работ,\nуслуг),\nимущественных\nправ без налога -\nвсего", optsBoundedRS2).
+			Cell("В том числе\nсумма\nакциза", optsBoundedRS2).
+			Cell("Налоговая\nставка", optsBoundedRS2).
+			Cell("Сумма налога,\nпредъявляемая\nпокупателю", optsBoundedRS2).
+			Cell("Стоимость\nтоваров (работ,\nуслуг),\nимущественных\nправ с налогом -\nвсего", optsBoundedRS2).
+			Cell("Страна\nпроисхождения\nтовара", optsBoundedCS2).
+			Cell("Регистрационный\nномер декларации\nна товары или\nрегистрационный\nномер партии\nтовара,\nподлежащего\nпрослеживаемости", optsBoundedRS2)
+
+		table.Row().
+			Cell("код", optsBounded).
+			Cell("условное\nобозна-\nчение\n(нацио-\nнальное)", optsBounded).
+			Cell("цифро-\nвой\nкод", optsBounded).
+			Cell("краткое\nнаимено-\nвание", optsBounded)
 	}
-
-	optsBoundedRS2 := pdf_craft.CellOptions{
-		Border:  "o",
-		Wrap:    true,
-		Rowspan: 2,
-	}
-
-	optsBoundedCS2 := pdf_craft.CellOptions{
-		Align:   "CM",
-		Border:  "o",
-		Wrap:    true,
-		Colspan: 2,
-	}
-
-	table.Row().
-		Cell("Код\nтовара/работ, услуг", pdf_craft.CellOptions{Height: 10, Border: "tblR", Wrap: true, Rowspan: 2}).
-		Cell("№\nп/п", optsBoundedRS2).
-		Cell("Наименование товара\n(описание выполненных работ, оказанных услуг),\nимущественного права", optsBoundedRS2).
-		Cell("Код\nвида\nтовара", optsBoundedRS2).
-		Cell("Единица\nизмерения", optsBoundedCS2).
-		Cell("Количество\n(объем)", optsBoundedRS2).
-		Cell("Цена\n(тариф) за\nединицу\nизмерения", optsBoundedRS2).
-		Cell("Стоимость\nтоваров (работ,\nуслуг),\nимущественных\nправ без налога -\nвсего", optsBoundedRS2).
-		Cell("В том числе\nсумма\nакциза", optsBoundedRS2).
-		Cell("Налоговая\nставка", optsBoundedRS2).
-		Cell("Сумма налога,\nпредъявляемая\nпокупателю", optsBoundedRS2).
-		Cell("Стоимость\nтоваров (работ,\nуслуг),\nимущественных\nправ с налогом -\nвсего", optsBoundedRS2).
-		Cell("Страна\nпроисхождения\nтовара", optsBoundedCS2).
-		Cell("Регистрационный\nномер декларации\nна товары или\nрегистрационный\nномер партии\nтовара,\nподлежащего\nпрослеживаемости", optsBoundedRS2)
-
-	table.Row().
-		Cell("код", optsBounded).
-		Cell("условное\nобозна-\nчение\n(нацио-\nнальное)", optsBounded).
-		Cell("цифро-\nвой\nкод", optsBounded).
-		Cell("краткое\nнаимено-\nвание", optsBounded)
 }
 
-func tableNumberHeader(block *pdf_craft.Block) {
-	table := block.Slot().
-		Table(1, []unit.MM{21, 7, 83, 7, 7, 10, 15, 15, 20, 13, 13, 20, 20, 8, 10, 22})
+func tableNumberHeader(columns []unit.MM) func(*pdf_craft.Block) {
+	return func(block *pdf_craft.Block) {
+		table := block.Slot().
+			Table(1, columns)
 
-	table.Row().
-		Cell("А", pdf_craft.CellOptions{Align: "CM", Height: 3, Border: "tblR"}).
-		Bounded("1").
-		Bounded("1а").
-		Bounded("1б").
-		Bounded("2").
-		Bounded("2а").
-		Bounded("3").
-		Bounded("4").
-		Bounded("5").
-		Bounded("6").
-		Bounded("7").
-		Bounded("8").
-		Bounded("9").
-		Bounded("10").
-		Bounded("10а").
-		Bounded("11")
+		table.Row().
+			Cell("А", pdf_craft.CellOptions{Align: "CM", Height: 3, Border: "tblR"}).
+			Bounded("1").
+			Bounded("1а").
+			Bounded("1б").
+			Bounded("2").
+			Bounded("2а").
+			Bounded("3").
+			Bounded("4").
+			Bounded("5").
+			Bounded("6").
+			Bounded("7").
+			Bounded("8").
+			Bounded("9").
+			Bounded("10").
+			Bounded("10а").
+			Bounded("11")
+	}
 }
 
-func tableDetails(block *pdf_craft.Block, ordered []string) {
-	table := block.Slot().
-		Table(1, []unit.MM{21, 7, 83, 7, 7, 10, 15, 15, 20, 13, 13, 20, 20, 8, 10, 22})
+func tableDetails(columns []unit.MM) pdf_craft.RepeaterFiller {
+	return func(block *pdf_craft.Block, ordered []string) {
+		table := block.Slot().
+			Table(1, columns)
 
-	table.Row().
-		Cell(ordered[0], pdf_craft.CellOptions{ID: 0, Align: "CB", Border: "tblR"}).
-		Cell(ordered[1], pdf_craft.CellOptions{ID: 1, Align: "CB", Border: "o"}).
-		Cell(ordered[2], pdf_craft.CellOptions{ID: 2, Align: "LB", Border: "o", Wrap: true}).
-		Cell(ordered[3], pdf_craft.CellOptions{ID: 3, Align: "CB", Border: "o"}).
-		Cell(ordered[4], pdf_craft.CellOptions{ID: 4, Align: "RB", Border: "o"}).
-		Cell(ordered[5], pdf_craft.CellOptions{ID: 5, Align: "LB", Border: "o"}).
-		Cell(ordered[6], pdf_craft.CellOptions{ID: 6, Align: "RB", Border: "o"}).
-		Cell(ordered[7], pdf_craft.CellOptions{ID: 7, Align: "RB", Border: "o"}).
-		Cell(ordered[8], pdf_craft.CellOptions{ID: 8, Align: "RB", Border: "o"}).
-		Cell(ordered[9], pdf_craft.CellOptions{ID: 9, Align: "RB", Border: "o"}).
-		Cell(ordered[10], pdf_craft.CellOptions{ID: 10, Align: "RB", Border: "o"}).
-		Cell(ordered[11], pdf_craft.CellOptions{ID: 11, Align: "RB", Border: "o"}).
-		Cell(ordered[12], pdf_craft.CellOptions{ID: 12, Align: "RB", Border: "o"}).
-		Cell(ordered[13], pdf_craft.CellOptions{ID: 13, Align: "RB", Border: "o"}).
-		Cell(ordered[14], pdf_craft.CellOptions{ID: 14, Align: "LB", Border: "o"}).
-		Cell(ordered[15], pdf_craft.CellOptions{ID: 15, Align: "LB", Border: "o"})
+		table.Row().
+			Cell(ordered[0], pdf_craft.CellOptions{ID: 0, Align: "CB", Border: "tblR"}).
+			Cell(ordered[1], pdf_craft.CellOptions{ID: 1, Align: "CB", Border: "o"}).
+			Cell(ordered[2], pdf_craft.CellOptions{ID: 2, Align: "LB", Border: "o", Wrap: true}).
+			Cell(ordered[3], pdf_craft.CellOptions{ID: 3, Align: "CB", Border: "o"}).
+			Cell(ordered[4], pdf_craft.CellOptions{ID: 4, Align: "RB", Border: "o"}).
+			Cell(ordered[5], pdf_craft.CellOptions{ID: 5, Align: "LB", Border: "o"}).
+			Cell(ordered[6], pdf_craft.CellOptions{ID: 6, Align: "RB", Border: "o"}).
+			Cell(ordered[7], pdf_craft.CellOptions{ID: 7, Align: "RB", Border: "o"}).
+			Cell(ordered[8], pdf_craft.CellOptions{ID: 8, Align: "RB", Border: "o"}).
+			Cell(ordered[9], pdf_craft.CellOptions{ID: 9, Align: "RB", Border: "o"}).
+			Cell(ordered[10], pdf_craft.CellOptions{ID: 10, Align: "RB", Border: "o"}).
+			Cell(ordered[11], pdf_craft.CellOptions{ID: 11, Align: "RB", Border: "o"}).
+			Cell(ordered[12], pdf_craft.CellOptions{ID: 12, Align: "RB", Border: "o"}).
+			Cell(ordered[13], pdf_craft.CellOptions{ID: 13, Align: "RB", Border: "o"}).
+			Cell(ordered[14], pdf_craft.CellOptions{ID: 14, Align: "LB", Border: "o"}).
+			Cell(ordered[15], pdf_craft.CellOptions{ID: 15, Align: "LB", Border: "o"})
+	}
 }

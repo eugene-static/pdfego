@@ -1,4 +1,4 @@
-package core
+package pdf_craft
 
 import (
 	"strconv"
@@ -13,11 +13,11 @@ const (
 	objNumResources = 2
 )
 
-func (core *Core) StartDocument() {
+func (core *Core) startDocument() {
 	core.writeFileHeader()
 }
 
-func (core *Core) FinishDocument() {
+func (core *Core) finishDocument() {
 	core.writePage()
 	core.writePages()
 	core.writeResources()
@@ -31,7 +31,7 @@ func (core *Core) FinishDocument() {
 }
 
 func (core *Core) writeResources() {
-	if core.Err() != nil {
+	if core.err() != nil {
 		return
 	}
 
@@ -70,7 +70,7 @@ func (core *Core) writeResources() {
 }
 
 func (core *Core) writeFont(f *font.Font, alias string) int64 {
-	if core.Err() != nil {
+	if core.err() != nil {
 		return 0
 	}
 
@@ -114,7 +114,7 @@ func (core *Core) writeFont(f *font.Font, alias string) int64 {
 
 	_, err := b.ReadFrom(cMapB)
 	if err != nil {
-		core.WriteError(err)
+		core.writeError(err)
 
 		return 0
 	}
@@ -183,14 +183,14 @@ func (core *Core) writeFont(f *font.Font, alias string) int64 {
 	if !ok {
 		subset, err := f.Subset()
 		if err != nil {
-			core.WriteError(err)
+			core.writeError(err)
 
 			return 0
 		}
 
-		fontCompressedBytes, err = core.compressor.Compress(subset)
+		fontCompressedBytes, err = core.comp.compress(subset)
 		if err != nil {
-			core.WriteError(err)
+			core.writeError(err)
 
 			return 0
 		}
@@ -218,7 +218,7 @@ func (core *Core) writeFont(f *font.Font, alias string) int64 {
 }
 
 func (core *Core) writePages() {
-	if core.Err() != nil {
+	if core.err() != nil {
 		return
 	}
 
@@ -237,7 +237,7 @@ func (core *Core) writePages() {
 }
 
 func (core *Core) writePage() {
-	if core.Err() != nil {
+	if core.err() != nil {
 		return
 	}
 
@@ -259,25 +259,25 @@ func (core *Core) writePage() {
 	b.OpenObjectParameters()
 
 	pageBytes := core.page.buffer.Bytes()
-	if core.compress {
-		compressed, err := core.compressor.Compress(core.page.buffer.Bytes())
-		if err != nil {
-			core.WriteError(err)
+	//if core.compress {
+	compressed, err := core.comp.compress(pageBytes)
+	if err != nil {
+		core.writeError(err)
 
-			return
-		}
-
-		pageBytes = compressed
-		b.WriteFieldString("/Filter", "/FlateDecode")
+		return
 	}
 
-	b.WriteFieldInt("/Length", len(pageBytes))
+	//pageBytes = compressed
+	b.WriteFieldString("/Filter", "/FlateDecode")
+	//}
+
+	b.WriteFieldInt("/Length", len(compressed))
 	b.CloseObjectParameters()
 	b.StartStream()
 
-	_, err := b.Write(pageBytes)
+	_, err = b.Write(compressed)
 	if err != nil {
-		core.WriteError(err)
+		core.writeError(err)
 
 		return
 	}
@@ -289,7 +289,7 @@ func (core *Core) writePage() {
 }
 
 func (core *Core) writeFileHeader() {
-	if core.Err() != nil {
+	if core.err() != nil {
 		return
 	}
 
@@ -298,7 +298,7 @@ func (core *Core) writeFileHeader() {
 }
 
 func (core *Core) writeInfo() int64 {
-	if core.Err() != nil {
+	if core.err() != nil {
 		return 0
 	}
 
@@ -318,7 +318,7 @@ func (core *Core) writeInfo() int64 {
 }
 
 func (core *Core) writeCatalog() int64 {
-	if core.Err() != nil {
+	if core.err() != nil {
 		return 0
 	}
 
@@ -336,7 +336,7 @@ func (core *Core) writeCatalog() int64 {
 }
 
 func (core *Core) writeXref() int {
-	if core.Err() != nil {
+	if core.err() != nil {
 		return 0
 	}
 
@@ -359,7 +359,7 @@ func (core *Core) writeXref() int {
 }
 
 func (core *Core) writeTrailer(root, info int64) {
-	if core.Err() != nil {
+	if core.err() != nil {
 		return
 	}
 
@@ -374,7 +374,7 @@ func (core *Core) writeTrailer(root, info int64) {
 }
 
 func (core *Core) writeEOF(xrefOffset int) {
-	if core.Err() != nil {
+	if core.err() != nil {
 		return
 	}
 

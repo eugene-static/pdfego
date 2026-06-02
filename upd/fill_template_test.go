@@ -1,40 +1,22 @@
 package upd
 
 import (
-	"log"
-	"log/slog"
 	"os"
 	"runtime"
 	"testing"
 	"time"
-
-	"github.com/eugene-static/pdf-craft/internal/core"
 )
 
 func BenchmarkUPD_FillTemplate(b *testing.B) {
-	upd := NewUPD(10000)
+	upd := NewUPD(10)
 
-	c := core.New(core.Landscape)
-	c.SetLogger(slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelDebug})))
-	c.SetMargin(3)
-	c.SetDefaultFontSize(6)
-	c.SetDefaultBorderSize(0.2)
-
-	err := c.SetFontRegular("../fonts/LiberationSans-Regular.ttf")
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	err = c.SetFontBold("../fonts/LiberationSans-Bold.ttf")
-	if err != nil {
-		log.Fatal(err)
-	}
+	template, err := prepareTemplate()
 
 	b.ReportAllocs()
 	b.ResetTimer()
 
 	for range b.N {
-		_, err = upd.FillTemplate(c)
+		_, err = upd.fillTemplate(template)
 		if err != nil {
 			b.Fatal(err)
 		}
@@ -44,7 +26,7 @@ func BenchmarkUPD_FillTemplate(b *testing.B) {
 }
 
 func TestUPD_FillTemplate(t *testing.T) {
-	upd := NewUPD(1)
+	upd := NewUPD(5000)
 
 	template, err := prepareTemplate()
 	if err != nil {
@@ -56,7 +38,7 @@ func TestUPD_FillTemplate(t *testing.T) {
 
 	_time := time.Now()
 
-	bytes, err := upd.FillTemplate(template)
+	bytes, err := upd.fillTemplate(template)
 	if err != nil {
 		t.Fatal(err)
 	}

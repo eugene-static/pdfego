@@ -1,15 +1,11 @@
 package upd
 
 import (
-	"log/slog"
-	"os"
-
-	"github.com/eugene-static/pdf-craft/internal/core"
+	"github.com/eugene-static/pdf-craft"
 )
 
-func prepareTemplate() (*core.Core, error) {
-	c := core.New(core.Landscape)
-	c.SetLogger(slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelDebug})))
+func prepareTemplate() (*pdf_craft.Core, error) {
+	c := pdf_craft.NewCore(pdf_craft.Landscape)
 	c.SetMargin(3)
 	c.SetDefaultFontSize(6)
 	c.SetDefaultBorderSize(0.3)
