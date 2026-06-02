@@ -259,23 +259,26 @@ func (core *Core) writePage() {
 	b.OpenObjectParameters()
 
 	pageBytes := core.page.buffer.Bytes()
-	//if core.compress {
-	compressed, err := core.comp.compress(pageBytes)
-	if err != nil {
-		core.writeError(err)
+	length := len(pageBytes)
 
-		return
+	if core.compress {
+		compressed, err := core.comp.compress(pageBytes)
+		if err != nil {
+			core.writeError(err)
+
+			return
+		}
+
+		pageBytes = compressed
+		length = len(compressed)
+		b.WriteFieldString("/Filter", "/FlateDecode")
 	}
 
-	//pageBytes = compressed
-	b.WriteFieldString("/Filter", "/FlateDecode")
-	//}
-
-	b.WriteFieldInt("/Length", len(compressed))
+	b.WriteFieldInt("/Length", length)
 	b.CloseObjectParameters()
 	b.StartStream()
 
-	_, err = b.Write(compressed)
+	_, err := b.Write(pageBytes)
 	if err != nil {
 		core.writeError(err)
 

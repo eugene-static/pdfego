@@ -170,6 +170,8 @@ func (core *Core) newPage() {
 func (core *Core) renderPage() {
 	if core.page.buffer.Len() > 0 {
 		core.writePage()
+
+		core.page.buffer.Reset()
 	}
 }
 
