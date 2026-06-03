@@ -17,13 +17,12 @@ const (
 )
 
 type Constructor struct {
-	core    *Core
-	block   Block
-	ordered Ordered
-	x0      unit.MM
-	y0      unit.MM
-	x       unit.MM
-	y       unit.MM
+	core  *Core
+	block Block
+	x0    unit.MM
+	y0    unit.MM
+	x     unit.MM
+	y     unit.MM
 }
 
 func New(core *Core) *Constructor {
@@ -85,29 +84,13 @@ func (c *Constructor) EndHeader(opts ...NodeOptions) *Block {
 	return &c.block
 }
 
-func (c *Constructor) Repeater(ordered Ordered, opts ...NodeOptions) *Constructor {
-	c.ordered = ordered
+func (c *Constructor) Repeater(ordered Ordered, opts ...NodeOptions) *Repeater {
 	c.newBlock(repeatableBlock, opts)
+	c.block.ordered = ordered
+	c.block.orderedLength = ordered.Len()
 
-	return c
-}
-
-// TODO:
-func (c *Constructor) AddRepeater(filler RepeaterFiller) {
-	if c.ordered.Len() == 0 {
-		return
-	}
-
-	ordered := c.ordered.OrderedRow(0)
-
-	filler(&c.block, ordered)
-
-	for i := range c.ordered.Len() - 1 {
-		c.render()
-
-		ordered = c.ordered.OrderedRow(i + 1)
-
-		c.block.update(ordered)
+	return &Repeater{
+		block: &c.block,
 	}
 }
 
@@ -118,13 +101,23 @@ func (c *Constructor) newBlock(profile byte, opts []NodeOptions) *Block {
 
 	c.block.slots = c.block.slots[:0]
 	c.block.profile = profile
-	c.block.opts = options
+	c.block.indentX = options.IndentX
+	c.block.indentY = options.IndentY
+	c.block.ledge = options.Ledge
+	c.block.spacing = options.Spacing
+	c.block.border = parseBorder(options.Border)
+	c.block.borderSize = options.BorderSize
+
+	if profile != repeatableBlock && c.block.orderedLength > 0 {
+		c.block.ordered = nil
+		c.block.orderedLength = 0
+	}
 
 	return &c.block
 }
 
 func (c *Constructor) render() {
-	height := c.block.height()
+	height := c.block.height() + c.block.indentY
 
 	if c.block.profile == headerBlock {
 		header := c.core.page.newHeader()
@@ -139,7 +132,21 @@ func (c *Constructor) render() {
 		_, c.y0 = c.core.page.x0y0()
 	}
 
-	if c.core.page.isBelowBottomBorder(c.y + c.block.opts.IndentTop + height) {
+	if c.block.profile == repeatableBlock {
+		c.block.orderedLength--
+
+		index := c.block.orderedLength
+
+		if c.block.orderedLength > 0 {
+			c.render()
+
+			ordered := c.block.ordered.OrderedRow(index)
+
+			c.block.update(ordered)
+		}
+	}
+
+	if c.core.page.isBelowBottomBorder(c.y + c.block.indentY + height) {
 		c.core.renderPage()
 		c.core.newPage()
 
@@ -152,22 +159,32 @@ func (c *Constructor) render() {
 }
 
 type Block struct {
-	profile byte
-	core    *Core
-	slots   []Slot
-	opts    NodeOptions
+	profile       byte
+	core          *Core
+	ordered       Ordered
+	orderedLength int
+	slots         []Slot
+	indentX       unit.MM
+	indentY       unit.MM
+	ledge         unit.MM
+	spacing       unit.MM
+	border        uint8
+	borderSize    unit.PT
 }
 
 type BlockFiller func(*Block)
-
-type RepeaterFiller func(*Block, []string)
 
 func (b *Block) Slot(opts ...NodeOptions) *Slot {
 	options := getOptions(opts)
 
 	s := Slot{
-		core: b.core,
-		opts: options,
+		core:       b.core,
+		indentX:    options.IndentX,
+		indentY:    options.IndentY,
+		spacing:    options.Spacing,
+		ledge:      options.Ledge,
+		borderSize: options.BorderSize,
+		border:     parseBorder(options.Border),
 	}
 
 	b.slots = append(b.slots, s)
@@ -175,20 +192,28 @@ func (b *Block) Slot(opts ...NodeOptions) *Slot {
 	return &b.slots[len(b.slots)-1]
 }
 
-func (b *Block) Add(filler BlockFiller) *Block {
+func (b *Block) Fill(filler BlockFiller) *Block {
 	filler(b)
 
 	return b
 }
 
 func (b *Block) render(buf *buffer.Buffer, x, y unit.MM) {
-	x += b.opts.IndentLeft
-	y += b.opts.IndentTop
+	x += b.indentX
+	y += b.indentY
+
+	if b.border > 0 {
+		width := b.width()
+		height := b.height()
+		borderSize := coalesce(b.borderSize, b.core.DefaultBorderSize())
+
+		renderBorder(buf, x, y, width, height, b.border, borderSize)
+	}
 
 	for i := range b.slots {
 		b.slots[i].render(buf, x, y)
 
-		x += b.slots[i].width() + b.opts.Spacing
+		x += b.slots[i].width() + b.spacing
 	}
 }
 
@@ -200,30 +225,51 @@ func (b *Block) update(ordered []string) {
 
 func (b *Block) height() (h unit.MM) {
 	for i := range b.slots {
-		sh := b.slots[i].height()
+		sh := b.slots[i].height() + b.slots[i].indentY
 		if h < sh {
 			h = sh
 		}
 	}
 
-	return h + b.opts.Ledge
+	return h + b.ledge
 }
 
 func (b *Block) width() (w unit.MM) {
 	for i := range b.slots {
-		w += b.slots[i].width() + b.slots[i].opts.IndentLeft
+		w += b.slots[i].width() + b.slots[i].indentX + b.spacing
 	}
 
-	w += b.opts.Spacing * unit.MM(len(b.slots)-1)
+	w -= b.spacing
 
 	return w
 }
 
+type Repeater struct {
+	block *Block
+}
+
+type RepeaterFiller func(*Block, []string)
+
+func (r *Repeater) Repeat(filler RepeaterFiller) {
+	if r.block.ordered.Len() == 0 {
+		return
+	}
+
+	ordered := r.block.ordered.OrderedRow(0)
+
+	filler(r.block, ordered)
+}
+
 type Slot struct {
-	core   *Core
-	blocks []Block
-	table  *Table
-	opts   NodeOptions
+	core       *Core
+	blocks     []Block
+	table      *Table
+	indentX    unit.MM
+	indentY    unit.MM
+	ledge      unit.MM
+	spacing    unit.MM
+	border     uint8
+	borderSize unit.PT
 }
 
 type SlotFiller func(*Slot)
@@ -237,8 +283,13 @@ func (s *Slot) Block(opts ...NodeOptions) *Block {
 	options := getOptions(opts)
 
 	b := Block{
-		core: s.core,
-		opts: options,
+		core:       s.core,
+		indentX:    options.IndentX,
+		indentY:    options.IndentY,
+		ledge:      options.Ledge,
+		spacing:    options.Spacing,
+		border:     parseBorder(options.Border),
+		borderSize: options.BorderSize,
 	}
 
 	s.blocks = append(s.blocks, b)
@@ -274,8 +325,16 @@ func (s *Slot) Add(filler SlotFiller) *Slot {
 }
 
 func (s *Slot) render(buf *buffer.Buffer, x, y unit.MM) {
-	x += s.opts.IndentLeft
-	y += s.opts.IndentTop
+	x += s.indentX
+	y += s.indentY
+
+	if s.border > 0 {
+		width := s.width()
+		height := s.height()
+		borderSize := coalesce(s.borderSize, s.core.DefaultBorderSize())
+
+		renderBorder(buf, x, y, width, height, s.border, borderSize)
+	}
 
 	if s.table != nil {
 		s.table.render(buf, x, y)
@@ -283,23 +342,10 @@ func (s *Slot) render(buf *buffer.Buffer, x, y unit.MM) {
 		return
 	}
 
-	if s.opts.Border != "" {
-		borderMask := parseBorder(s.opts.Border)
-		width := s.width()
-		height := s.height() + s.opts.IndentTop
-
-		borderSize := s.core.DefaultBorderSize()
-		if s.opts.BorderSize > 0 {
-			borderSize = s.opts.BorderSize
-		}
-
-		renderBorder(buf, x, y, width, height, borderMask, borderSize)
-	}
-
 	for i := range s.blocks {
 		s.blocks[i].render(buf, x, y)
 
-		y += s.blocks[i].height()
+		y += s.blocks[i].height() + s.blocks[i].indentY + s.spacing
 	}
 }
 
@@ -314,17 +360,19 @@ func (s *Slot) update(ordered []string) {
 }
 
 func (s *Slot) height() (h unit.MM) {
-	h = s.opts.Ledge
+	h = s.ledge
 
-	if len(s.blocks) > 0 {
-		for i := range s.blocks {
-			h += s.blocks[i].height() + s.blocks[i].opts.IndentTop + s.blocks[i].opts.Ledge
-		}
+	if s.table != nil {
+		h = s.table.height() + s.table.indentY
 
 		return h
 	}
 
-	h = s.table.height() + s.table.opts.IndentTop
+	for i := range s.blocks {
+		h += s.blocks[i].height() + s.blocks[i].indentY + s.spacing
+	}
+
+	h -= s.spacing
 
 	return h
 }
@@ -337,7 +385,7 @@ func (s *Slot) width() (w unit.MM) {
 	}
 
 	for i := range s.blocks {
-		bw := s.blocks[i].width() + s.blocks[i].opts.IndentLeft
+		bw := s.blocks[i].width() + s.blocks[i].indentX
 		if w < bw {
 			w = bw
 		}
@@ -347,34 +395,39 @@ func (s *Slot) width() (w unit.MM) {
 }
 
 type Table struct {
-	core      *Core
-	columns   []unit.MM
-	rows      []Row
-	cellsPool []cell
-	rowspans  []uint8
-	rowIndex  uint8
-	opts      NodeOptions
+	core       *Core
+	columns    []unit.MM
+	rows       []Row
+	cellsPool  []cell
+	rowspans   []uint8
+	rowIndex   uint8
+	indentX    unit.MM
+	indentY    unit.MM
+	ledge      unit.MM
+	spacing    unit.MM
+	border     uint8
+	borderSize unit.PT
 }
 
-func (t *Table) Row(opts ...NodeOptions) *Row {
-	options := getOptions(opts)
+type TableFiller func(*Table)
 
+func (t *Table) Row() *Row {
 	t.setRowIndex()
 
 	r := &t.rows[t.rowIndex]
 
 	t.decrementRowSpans()
-	t.newRow(r, options)
+	t.newRow(r)
 	t.updateIndexes()
 
 	return r
 }
 
-func (t *Table) Add(rowFunc func(t *Table)) {
-	rowFunc(t)
+func (t *Table) Fill(filler TableFiller) {
+	filler(t)
 }
 
-func (t *Table) newRow(row *Row, options NodeOptions) {
+func (t *Table) newRow(row *Row) {
 	columnsLen := len(t.columns)
 	start := int(t.rowIndex) * columnsLen
 	end := start + columnsLen
@@ -384,21 +437,26 @@ func (t *Table) newRow(row *Row, options NodeOptions) {
 	row.columnsLen = uint8(columnsLen)
 	row.cells = t.cellsPool[start:end]
 	row.rowspans = t.rowspans
-	row.options = options
 }
 
 func (t *Table) render(buf *buffer.Buffer, x, y unit.MM) {
+	x += t.indentX
+	y += t.indentY
+
+	if t.border > 0 {
+		width := t.width()
+		height := t.height()
+		borderSize := coalesce(t.borderSize, t.core.DefaultBorderSize())
+
+		renderBorder(buf, x, y, width, height, t.border, borderSize)
+	}
+
 	cx := x
 	cy := y
 
 	for i := range t.cellsPool {
 		ri := i / len(t.columns)
 		ci := i % len(t.columns)
-
-		if ci == 0 {
-			cx += t.rows[ri].options.IndentLeft
-			cy += t.rows[ri].options.IndentTop
-		}
 
 		if t.cellsPool[i].busy {
 			t.setCellHeight(ri, i)
@@ -410,7 +468,7 @@ func (t *Table) render(buf *buffer.Buffer, x, y unit.MM) {
 
 		if ci == len(t.columns)-1 {
 			cx = x
-			cy += t.rows[ri].height + t.rows[ri].options.Ledge + t.opts.Spacing
+			cy += t.rows[ri].height + t.spacing
 		}
 	}
 }
@@ -435,10 +493,10 @@ func (t *Table) update(ordered []string) {
 
 func (t *Table) height() (h unit.MM) {
 	for i := range t.rows {
-		h += t.rows[i].height + t.opts.Spacing
+		h += t.rows[i].height + t.spacing
 	}
 
-	h += t.opts.Ledge - t.opts.Spacing
+	h += t.ledge - t.spacing
 
 	return h
 }
@@ -489,7 +547,6 @@ type Row struct {
 	height      unit.MM
 	columnIndex uint8
 	columnsLen  uint8
-	options     NodeOptions
 }
 
 func (r *Row) Cell(text string, opts ...CellOptions) *Row {
@@ -535,19 +592,20 @@ func (r *Row) Bounded(text string) *Row {
 }
 
 func (r *Row) newCell(c *cell, text string, opts CellOptions) {
-	c.textLines = make([]font.Text, 0, 10)
-	c.font = r.core.font(FontRegular)
-	c.fontSize = r.core.DefaultFontSize()
-	c.borderSize = r.core.DefaultBorderSize()
-	c.alignH = alignC
-	c.alignV = alignM
-	c.colspan = 1
-	c.rowspan = 1
-	c.busy = true
-
-	c.setOpts(r.core, opts)
-
+	c.id = opts.ID
+	c.wrapped = opts.Wrap
+	c.height = opts.Height
+	c.static = opts.Height > 0
+	c.borderMask = parseBorder(opts.Border)
+	c.borderSize = coalesce(opts.BorderSize, r.core.DefaultBorderSize())
+	c.fontSize = coalesce(opts.FontSize, r.core.DefaultFontSize())
+	c.font = r.core.font(coalesce(opts.Font, FontRegular))
+	c.colspan = coalesce(opts.Colspan, 1)
+	c.rowspan = coalesce(opts.Rowspan, 1)
 	c.width = r.cellWidth(c.colspan)
+	c.alignH, c.alignV = parseAlignment(opts.Align)
+	c.textLines = make([]font.Text, 0, 10)
+	c.busy = true
 
 	c.setTextLines(text)
 }
@@ -556,14 +614,6 @@ func (r *Row) updateCell(c *cell, text string) {
 	c.setTextLines(text)
 
 	r.setHeight(c)
-}
-
-func (r *Row) width() (w float64) {
-	for i := range r.cells {
-		w += r.cells[i].width.Float64()
-	}
-
-	return w
 }
 
 // Ширина ячейки равна сумме ширин всех колонок, которые она занимает.
@@ -624,35 +674,6 @@ type cell struct {
 	wrapped    bool
 	static     bool
 	busy       bool
-}
-
-func (c *cell) setOpts(core *Core, opts CellOptions) {
-	c.id = opts.ID
-	c.wrapped = opts.Wrap
-	c.height = opts.Height
-	c.static = opts.Height > 0
-	c.borderMask = parseBorder(opts.Border)
-	c.alignH, c.alignV = parseAlignment(opts.Align)
-
-	if opts.Font != "" {
-		c.font = core.font(opts.Font)
-	}
-
-	if opts.FontSize > 0 {
-		c.fontSize = opts.FontSize
-	}
-
-	if opts.BorderSize > 0 {
-		c.borderSize = opts.BorderSize
-	}
-
-	if opts.Colspan > 1 {
-		c.colspan = opts.Colspan
-	}
-
-	if opts.Rowspan > 1 {
-		c.rowspan = opts.Rowspan
-	}
 }
 
 func (c *cell) setTextLines(text string) {

@@ -15,9 +15,9 @@ func (upd UPD) fillTemplate(c *pdf_craft.Core) ([]byte, error) {
 
 	headBlock.Slot(
 		pdf_craft.NodeOptions{
-			IndentLeft: 1,
-			Ledge:      5,
-			Border:     "L",
+			IndentX: 1,
+			Ledge:   5,
+			Border:  "L",
 		},
 	).
 		Add(upd.numberHeader).
@@ -26,13 +26,13 @@ func (upd UPD) fillTemplate(c *pdf_craft.Core) ([]byte, error) {
 	tableColumns := []unit.MM{21, 7, 83, 7, 7, 10, 15, 15, 20, 13, 13, 20, 20, 8, 10, 22}
 
 	template.Block().
-		Add(tableHeader(tableColumns))
+		Fill(tableHeader(tableColumns))
 
 	template.Header().
-		Add(tableNumberHeader(tableColumns))
+		Fill(tableNumberHeader(tableColumns))
 
 	template.Repeater(upd).
-		AddRepeater(tableDetails(tableColumns))
+		Repeat(tableDetails(tableColumns))
 
 	template.Render()
 
@@ -54,7 +54,7 @@ func (upd UPD) titleHeader(slot *pdf_craft.Slot) {
 func (upd UPD) numberHeader(slot *pdf_craft.Slot) {
 	numbersDates := slot.Block(
 		pdf_craft.NodeOptions{
-			IndentLeft: 1,
+			IndentX: 1,
 		},
 	)
 
@@ -88,8 +88,8 @@ func (upd UPD) numberHeader(slot *pdf_craft.Slot) {
 func (upd UPD) requisites(slot *pdf_craft.Slot) {
 	requisites := slot.Block(
 		pdf_craft.NodeOptions{
-			IndentLeft: 1,
-			IndentTop:  5,
+			IndentX: 1,
+			IndentY: 5,
 		},
 	)
 

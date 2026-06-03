@@ -19,12 +19,12 @@ const (
 )
 
 const (
-	alignL uint8 = 1 + iota
+	alignL uint8 = 0 + iota
 	alignC
 	alignR
-	alignT
-	alignM
-	alignB
+	alignT = alignL
+	alignM = alignC
+	alignB = alignR
 )
 
 type CellOptions struct {
@@ -44,8 +44,8 @@ type NodeOptions struct {
 	Border     string
 	BorderSize unit.PT
 	Spacing    unit.MM
-	IndentLeft unit.MM
-	IndentTop  unit.MM
+	IndentX    unit.MM
+	IndentY    unit.MM
 	Ledge      unit.MM
 }
 
@@ -181,4 +181,16 @@ func parseAlignment(alignment string) (alignH, alignV uint8) {
 	}
 
 	return alignH, alignV
+}
+
+func coalesce[T comparable](vals ...T) T {
+	var zero T
+
+	for i := range vals {
+		if vals[i] != zero {
+			return vals[i]
+		}
+	}
+
+	return zero
 }
