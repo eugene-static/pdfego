@@ -27,23 +27,6 @@ const (
 	alignB = alignR
 )
 
-type CellOptions struct {
-	ID          uint8
-	Colspan     uint8
-	Rowspan     uint8
-	Align       string
-	Border      string
-	Font        string
-	PlaceHolder string
-	Scale       float64
-	OffsetH     unit.MM
-	OffsetV     unit.MM
-	Height      unit.MM
-	BorderSize  unit.PT
-	FontSize    unit.PT
-	Wrap        bool
-}
-
 type NodeOptions struct {
 	Border     string
 	BorderSize unit.PT
@@ -62,7 +45,28 @@ type TableOptions struct {
 	SpacingV   unit.MM
 }
 
-func getOptions[T CellOptions | NodeOptions | TableOptions](opts []T) T {
+type RowOptions struct {
+	Height unit.MM
+}
+
+type CellOptions struct {
+	ID          uint8
+	Colspan     uint8
+	Rowspan     uint8
+	Align       string
+	Border      string
+	Font        string
+	PlaceHolder string
+	Scale       float64
+	OffsetH     unit.MM
+	OffsetV     unit.MM
+	Height      unit.MM
+	BorderSize  unit.PT
+	FontSize    unit.PT
+	Wrap        bool
+}
+
+func getOptions[T CellOptions | NodeOptions | TableOptions | RowOptions](opts []T) T {
 	var opt T
 	if len(opts) > 0 {
 		opt = opts[0]

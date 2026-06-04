@@ -15,8 +15,7 @@ func (upd UPD) fillTemplate(c *pdf_craft.Core) ([]byte, error) {
 
 	headBlock := template.Block()
 
-	headBlock.Slot().
-		Fill(upd.titleHeader)
+	headBlock.Slot().Fill(upd.titleHeader)
 
 	headBlock.Slot(
 		pdf_craft.NodeOptions{
@@ -30,19 +29,14 @@ func (upd UPD) fillTemplate(c *pdf_craft.Core) ([]byte, error) {
 
 	tableColumns := []unit.MM{21, 7, 83, 7, 7, 10, 15, 15, 20, 13, 13, 20, 20, 8, 10, 22}
 
-	template.Block().
-		Fill(tableHeader(tableColumns))
+	template.Block().Fill(tableHeader(tableColumns))
+	template.Header().Fill(tableNumberHeader(tableColumns))
+	template.Repeater(upd).Repeat(tableDetails(tableColumns))
 
-	template.Header().
-		Fill(tableNumberHeader(tableColumns))
-
-	template.Repeater(upd).
-		Repeat(tableDetails(tableColumns))
-
-	template.Block().
-		Fill(upd.tableFooter(tableColumns)).
-		Fill(upd.signatories).
-		Fill(upd.shippingHeaders)
+	template.Block().Fill(upd.tableFooter(tableColumns))
+	template.Block().Fill(upd.signatories)
+	template.Block().Fill(upd.shippingHeaders)
+	template.Block().Fill(upd.shippingBody)
 
 	template.Render()
 
@@ -331,7 +325,7 @@ func (upd UPD) signatories(block *pdf_craft.Block) {
 
 func (upd UPD) shippingHeaders(block *pdf_craft.Block) {
 	table := block.Slot().
-		Table(4, []unit.MM{40, 240, 10},
+		Table(4, []unit.MM{60, 224, 10},
 			pdf_craft.TableOptions{
 				IndentV: 5,
 			},
@@ -339,7 +333,7 @@ func (upd UPD) shippingHeaders(block *pdf_craft.Block) {
 
 	table.Row().
 		Label("Основание передачи (сдачи) / получения (приемки)").
-		Blank(upd.Contract, "LB").
+		Blank(upd.Contract, "L").
 		Paragraph("[10]")
 	table.Row().
 		Underscore("").
@@ -351,4 +345,120 @@ func (upd UPD) shippingHeaders(block *pdf_craft.Block) {
 	table.Row().
 		Underscore("").
 		Underscore("(транспортная накладная, поручение экспедитору, экспедиторская / складская расписка и др. / масса нетто/ брутто груза, если не приведены ссылки на транспортные документы, содержащие эти сведения)")
+}
+
+func (upd UPD) shippingBody(block *pdf_craft.Block) {
+	columns := []unit.MM{44, 44, 44, 10}
+	rowOptions := pdf_craft.RowOptions{Height: 4}
+
+	table := block.Slot(
+		pdf_craft.NodeOptions{
+			IndentV: 3,
+		},
+	).
+		Table(14, columns,
+			pdf_craft.TableOptions{
+				SpacingH: 1,
+			},
+		)
+
+	table.Row().
+		LabelSpan("Товар (груз) передал / услуги, результаты работ, права сдал", 2)
+	table.Row(rowOptions).
+		Blank(upd.SenderChiefPosition, "C").
+		BlankEmpty().
+		Blank(upd.SenderChiefName, "C").
+		Paragraph("[12]")
+	table.Row().
+		Underscore("(должность)").
+		Underscore("(подпись)").
+		Underscore("(Ф.И.О.)")
+	table.Row(rowOptions).
+		Label("Дата отгрузки, передачи (сдачи)").
+		BlankSpan(upd.DocSendDate, "C", 2).
+		Paragraph("[13]")
+	table.Row(rowOptions).
+		LabelSpan("Иные сведения об отгрузке, передаче", 2)
+	table.Row(rowOptions).
+		BlankSpan(upd.LkID, "L", 3).
+		Paragraph("[14]")
+	table.Row().
+		UnderscoreSpan("(ссылки на неотъемлемые приложения, сопутствующие документы, иные документы и т.п.)", 3)
+	table.Row(rowOptions).
+		LabelSpan("Ответственный за правильность оформления факта хозяйственной жизни", 2)
+	table.Row(rowOptions).
+		Blank(upd.SenderChiefPosition, "C").
+		BlankEmpty().
+		Blank(upd.SenderChiefName, "C").
+		Paragraph("[15]")
+	table.Row().
+		Underscore("(должность)").
+		Underscore("(подпись)").
+		Underscore("(Ф.И.О.)")
+	table.Row(rowOptions).
+		LabelSpan("Наименование экономического субъекта – составителя документа (в т.ч. комиссионера / агента)", 2)
+	table.Row(rowOptions).
+		BlankSpan(upd.OrgPrintName, "L", 3).
+		Paragraph("[16]")
+	table.Row().
+		UnderscoreSpan("(может не заполняться при проставлении печати в М.П., может быть указан ИНН / КПП)", 3)
+	table.Row().
+		Cell("М.П.")
+
+	table = block.Slot(
+		pdf_craft.NodeOptions{
+			IndentV: 3,
+			IndentH: 1,
+			Border:  "L",
+		},
+	).
+		Table(14, columns,
+			pdf_craft.TableOptions{
+				SpacingH: 1,
+				IndentH:  3,
+			},
+		)
+
+	table.Row().
+		LabelSpan("Товар (груз) получил / услуги, результаты работ, права принял", 2)
+	table.Row(rowOptions).
+		Blank(upd.RecipientPosition, "C").
+		BlankEmpty().
+		Blank(upd.RecipientName, "C").
+		Paragraph("[17]")
+	table.Row().
+		Underscore("(должность)").
+		Underscore("(подпись)").
+		Underscore("(Ф.И.О.)")
+	table.Row(rowOptions).
+		Label("Дата получения (приемки)").
+		BlankSpan(upd.DocReceiveDate, "C", 2).
+		Paragraph("[18]")
+	table.Row(rowOptions).
+		LabelSpan("Иные сведения о получении, приемке", 2)
+	table.Row(rowOptions).
+		BlankSpan("", "L", 3).
+		Paragraph("[19]")
+	table.Row().
+		UnderscoreSpan("(информация о наличии/отсутствии претензии; ссылки на неотъемлемые приложения, и другие документы и т.п.)\nОтветственный", 3)
+	table.Row(rowOptions).
+		LabelSpan("Ответственный за правильность оформления факта хозяйственной жизни", 2)
+	table.Row(rowOptions).
+		Blank(upd.RecipientChiefPosition, "C").
+		BlankEmpty().
+		Blank(upd.RecipientChiefName, "C").
+		Paragraph("[20]")
+	table.Row().
+		Underscore("(должность)").
+		Underscore("(подпись)").
+		Underscore("(Ф.И.О.)")
+	table.Row(rowOptions).
+		LabelSpan("Наименование экономического субъекта – составителя документа (в т.ч. комиссионера / агента)", 2)
+	table.Row(rowOptions).
+		BlankSpan(upd.SupplierPrintName, "L", 3).
+		Paragraph("[21]")
+	table.Row().
+		UnderscoreSpan("(может не заполняться при проставлении печати в М.П., может быть указан ИНН / КПП)", 3)
+	table.Row().
+		Cell("М.П.")
 }

@@ -199,10 +199,8 @@ func (b *Block) Slot(opts ...NodeOptions) *Slot {
 	return &b.slots[len(b.slots)-1]
 }
 
-func (b *Block) Fill(filler BlockFiller) *Block {
+func (b *Block) Fill(filler BlockFiller) {
 	filler(b)
-
-	return b
 }
 
 func (b *Block) render(buf *buffer.Buffer, x, y unit.MM) {
@@ -426,13 +424,15 @@ type Table struct {
 
 type TableFiller func(*Table)
 
-func (t *Table) Row() *Row {
+func (t *Table) Row(opts ...RowOptions) *Row {
+	options := getOptions(opts)
+
 	t.setRowIndex()
 
 	r := &t.rows[t.rowIndex]
 
 	t.decrementRowSpans()
-	t.newRow(r)
+	t.newRow(r, options)
 	t.updateIndexes()
 
 	return r
@@ -442,11 +442,12 @@ func (t *Table) Fill(filler TableFiller) {
 	filler(t)
 }
 
-func (t *Table) newRow(row *Row) {
+func (t *Table) newRow(row *Row, options RowOptions) {
 	columnsLen := len(t.columns)
 	start := int(t.rowIndex) * columnsLen
 	end := start + columnsLen
 
+	row.height = options.Height
 	row.core = t.core
 	row.columns = t.columns
 	row.columnsLen = uint8(columnsLen)
@@ -582,6 +583,10 @@ func (r *Row) Cell(text string, opts ...CellOptions) *Row {
 
 func (r *Row) Label(text string) *Row {
 	return r.Cell(text, CellOptions{Align: "LB"})
+}
+
+func (r *Row) LabelSpan(text string, colspan uint8) *Row {
+	return r.Cell(text, CellOptions{Align: "LB", Colspan: colspan})
 }
 
 func (r *Row) LabelHead(text string) *Row {
