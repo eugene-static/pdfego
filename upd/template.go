@@ -9,7 +9,7 @@ func prepareTemplate() (*pdf_craft.Core, error) {
 	c.SetMargin(3)
 	c.SetDefaultFontSize(6)
 	c.SetDefaultBorderSize(0.3)
-	c.Compress()
+	//c.Compress()
 
 	err := c.SetFontRegular("../fonts/LiberationSans-Regular.ttf")
 	if err != nil {

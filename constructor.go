@@ -2,18 +2,25 @@ package pdf_craft
 
 import (
 	"errors"
+	"fmt"
 
 	"github.com/eugene-static/pdf-craft/internal/buffer"
 	"github.com/eugene-static/pdf-craft/internal/font"
+	"github.com/eugene-static/pdf-craft/internal/image"
 	"github.com/eugene-static/pdf-craft/pkg/unit"
 )
 
 const (
-	blankBlock = iota
+	blankBlock uint8 = iota
 	defaultBlock
 	headerBlock
 	headerStopBlock
 	repeatableBlock
+)
+
+const (
+	defaultCell uint8 = iota
+	imageCell
 )
 
 type Constructor struct {
@@ -101,8 +108,8 @@ func (c *Constructor) newBlock(profile byte, opts []NodeOptions) *Block {
 
 	c.block.slots = c.block.slots[:0]
 	c.block.profile = profile
-	c.block.indentX = options.IndentX
-	c.block.indentY = options.IndentY
+	c.block.indentX = options.IndentH
+	c.block.indentY = options.IndentV
 	c.block.ledge = options.Ledge
 	c.block.spacing = options.Spacing
 	c.block.border = parseBorder(options.Border)
@@ -179,8 +186,8 @@ func (b *Block) Slot(opts ...NodeOptions) *Slot {
 
 	s := Slot{
 		core:       b.core,
-		indentX:    options.IndentX,
-		indentY:    options.IndentY,
+		indentX:    options.IndentH,
+		indentY:    options.IndentV,
 		spacing:    options.Spacing,
 		ledge:      options.Ledge,
 		borderSize: options.BorderSize,
@@ -284,8 +291,8 @@ func (s *Slot) Block(opts ...NodeOptions) *Block {
 
 	b := Block{
 		core:       s.core,
-		indentX:    options.IndentX,
-		indentY:    options.IndentY,
+		indentX:    options.IndentH,
+		indentY:    options.IndentV,
 		ledge:      options.Ledge,
 		spacing:    options.Spacing,
 		border:     parseBorder(options.Border),
@@ -297,20 +304,28 @@ func (s *Slot) Block(opts ...NodeOptions) *Block {
 	return &s.blocks[len(s.blocks)-1]
 }
 
-func (s *Slot) Table(rowsNum int, columns []unit.MM) *Table {
+func (s *Slot) Table(rowsNum int, columns []unit.MM, opts ...TableOptions) *Table {
 	if len(s.blocks) > 0 {
 		err := errors.New("слот уже содержит блоки")
 		s.core.writeError(err)
 	}
 
+	options := getOptions(opts)
+
 	columnsNum := len(columns)
 
 	t := &Table{
-		core:      s.core,
-		columns:   columns,
-		rows:      make([]Row, rowsNum),
-		rowspans:  make([]uint8, columnsNum),
-		cellsPool: make([]cell, rowsNum*columnsNum),
+		core:       s.core,
+		columns:    columns,
+		rows:       make([]Row, rowsNum),
+		rowspans:   make([]uint8, columnsNum),
+		cellsPool:  make([]cell, rowsNum*columnsNum),
+		border:     parseBorder(options.Border),
+		borderSize: options.BorderSize,
+		indentX:    options.IndentH,
+		indentY:    options.IndentV,
+		spacingX:   options.SpacingH,
+		spacingY:   options.SpacingV,
 	}
 
 	s.table = t
@@ -318,7 +333,7 @@ func (s *Slot) Table(rowsNum int, columns []unit.MM) *Table {
 	return t
 }
 
-func (s *Slot) Add(filler SlotFiller) *Slot {
+func (s *Slot) Fill(filler SlotFiller) *Slot {
 	filler(s)
 
 	return s
@@ -363,7 +378,7 @@ func (s *Slot) height() (h unit.MM) {
 	h = s.ledge
 
 	if s.table != nil {
-		h = s.table.height() + s.table.indentY
+		h += s.table.height() + s.table.indentY
 
 		return h
 	}
@@ -379,7 +394,7 @@ func (s *Slot) height() (h unit.MM) {
 
 func (s *Slot) width() (w unit.MM) {
 	if s.table != nil {
-		w = s.table.width()
+		w = s.table.width() + s.table.indentX
 
 		return w
 	}
@@ -401,12 +416,12 @@ type Table struct {
 	cellsPool  []cell
 	rowspans   []uint8
 	rowIndex   uint8
-	indentX    unit.MM
-	indentY    unit.MM
-	ledge      unit.MM
-	spacing    unit.MM
 	border     uint8
 	borderSize unit.PT
+	indentX    unit.MM
+	indentY    unit.MM
+	spacingX   unit.MM
+	spacingY   unit.MM
 }
 
 type TableFiller func(*Table)
@@ -437,6 +452,7 @@ func (t *Table) newRow(row *Row) {
 	row.columnsLen = uint8(columnsLen)
 	row.cells = t.cellsPool[start:end]
 	row.rowspans = t.rowspans
+	row.spacing = t.spacingX
 }
 
 func (t *Table) render(buf *buffer.Buffer, x, y unit.MM) {
@@ -459,16 +475,20 @@ func (t *Table) render(buf *buffer.Buffer, x, y unit.MM) {
 		ci := i % len(t.columns)
 
 		if t.cellsPool[i].busy {
+			if t.cellsPool[i].image != nil {
+				fmt.Println(t.cellsPool[i].height)
+			}
+
 			t.setCellHeight(ri, i)
 
 			t.cellsPool[i].render(buf, cx, cy)
 		}
 
-		cx += t.columns[ci]
+		cx += t.columns[ci] + t.spacingX
 
 		if ci == len(t.columns)-1 {
 			cx = x
-			cy += t.rows[ri].height + t.spacing
+			cy += t.rows[ri].height + t.spacingY
 		}
 	}
 }
@@ -493,18 +513,20 @@ func (t *Table) update(ordered []string) {
 
 func (t *Table) height() (h unit.MM) {
 	for i := range t.rows {
-		h += t.rows[i].height + t.spacing
+		h += t.rows[i].height + t.spacingY
 	}
 
-	h += t.ledge - t.spacing
+	h -= t.spacingY
 
 	return h
 }
 
 func (t *Table) width() (w unit.MM) {
 	for i := range t.columns {
-		w += t.columns[i]
+		w += t.columns[i] + t.spacingX
 	}
+
+	w -= t.spacingX
 
 	return w
 }
@@ -545,6 +567,7 @@ type Row struct {
 	columns     []unit.MM
 	rowspans    []uint8
 	height      unit.MM
+	spacing     unit.MM
 	columnIndex uint8
 	columnsLen  uint8
 }
@@ -552,13 +575,7 @@ type Row struct {
 func (r *Row) Cell(text string, opts ...CellOptions) *Row {
 	options := getOptions(opts)
 
-	r.setColIndex()
-
-	c := &r.cells[r.columnIndex]
-
-	r.newCell(c, text, options)
-	r.setHeight(c)
-	r.updateIndexes(c)
+	r.newCell(text, defaultCell, options)
 
 	return r
 }
@@ -571,12 +588,20 @@ func (r *Row) LabelHead(text string) *Row {
 	return r.Cell(text, CellOptions{Align: "LB", Font: FontBold})
 }
 
-func (r *Row) FormL(text string, wrapText bool) *Row {
-	return r.Cell(text, CellOptions{Align: "LB", Border: "b", Wrap: wrapText})
+func (r *Row) Blank(text, alignH string) *Row {
+	return r.Cell(text, CellOptions{Align: "B" + alignH, Border: "b"})
 }
 
-func (r *Row) FormC(text string, wrapText bool) *Row {
-	return r.Cell(text, CellOptions{Align: "CB", Border: "b", Wrap: wrapText})
+func (r *Row) BlankEmpty() *Row {
+	return r.Cell("", CellOptions{Border: "b"})
+}
+
+func (r *Row) BlankSpan(text, alignH string, colspan uint8) *Row {
+	return r.Cell(text, CellOptions{Align: "B" + alignH, Border: "b", Colspan: colspan})
+}
+
+func (r *Row) Form(text, alignH string) *Row {
+	return r.Cell(text, CellOptions{Align: "B" + alignH, Border: "b", Wrap: true})
 }
 
 func (r *Row) Paragraph(text string) *Row {
@@ -587,27 +612,57 @@ func (r *Row) Underscore(text string) *Row {
 	return r.Cell(text, CellOptions{Align: "CT", FontSize: r.core.DefaultFontSize().Sub(1)})
 }
 
+func (r *Row) UnderscoreSpan(text string, colspan uint8) *Row {
+	return r.Cell(text, CellOptions{Align: "CT", FontSize: r.core.DefaultFontSize().Sub(1), Colspan: colspan})
+}
+
 func (r *Row) Bounded(text string) *Row {
 	return r.Cell(text, CellOptions{Align: "CM", Border: "o", Wrap: false})
 }
 
-func (r *Row) newCell(c *cell, text string, opts CellOptions) {
-	c.id = opts.ID
-	c.wrapped = opts.Wrap
-	c.height = opts.Height
-	c.static = opts.Height > 0
-	c.borderMask = parseBorder(opts.Border)
-	c.borderSize = coalesce(opts.BorderSize, r.core.DefaultBorderSize())
-	c.fontSize = coalesce(opts.FontSize, r.core.DefaultFontSize())
-	c.font = r.core.font(coalesce(opts.Font, FontRegular))
-	c.colspan = coalesce(opts.Colspan, 1)
-	c.rowspan = coalesce(opts.Rowspan, 1)
+func (r *Row) Image(alias string, opts ...CellOptions) *Row {
+	options := getOptions(opts)
+
+	r.newCell(alias, imageCell, options)
+
+	return r
+}
+
+func (r *Row) newCell(text string, profile uint8, options CellOptions) {
+	r.setColIndex()
+
+	c := &r.cells[r.columnIndex]
+
+	c.id = options.ID
+	c.height = options.Height
+	c.static = options.Height > 0
+	c.offsetH = options.OffsetH
+	c.offsetV = options.OffsetV
+	c.borderMask = parseBorder(options.Border)
+	c.borderSize = coalesce(options.BorderSize, r.core.DefaultBorderSize())
+	c.colspan = coalesce(options.Colspan, 1)
+	c.rowspan = coalesce(options.Rowspan, 1)
 	c.width = r.cellWidth(c.colspan)
-	c.alignH, c.alignV = parseAlignment(opts.Align)
-	c.textLines = make([]font.Text, 0, 10)
 	c.busy = true
 
-	c.setTextLines(text)
+	if profile == imageCell {
+		c.image = r.core.images[text]
+		c.imageScale = coalesce(options.Scale, 1)
+		text = options.PlaceHolder
+	}
+
+	if text != "" {
+		c.wrapped = options.Wrap
+		c.alignH, c.alignV = parseAlignment(options.Align)
+		c.fontSize = coalesce(options.FontSize, r.core.DefaultFontSize())
+		c.font = r.core.font(coalesce(options.Font, FontRegular))
+		c.textLines = make([]font.Text, 0, 10)
+
+		c.setTextLines(text)
+	}
+
+	r.setHeight(c)
+	r.updateIndexes(c)
 }
 
 func (r *Row) updateCell(c *cell, text string) {
@@ -619,8 +674,10 @@ func (r *Row) updateCell(c *cell, text string) {
 // Ширина ячейки равна сумме ширин всех колонок, которые она занимает.
 func (r *Row) cellWidth(colspan uint8) (w unit.MM) {
 	for i := r.columnIndex; i < r.columnsLen && i < r.columnIndex+colspan; i++ {
-		w += r.columns[i]
+		w += r.columns[i] + r.spacing
 	}
+
+	w -= r.spacing
 
 	return w
 }
@@ -629,10 +686,12 @@ func (r *Row) cellWidth(colspan uint8) (w unit.MM) {
 // Поэтому высота ячейки будет определяться в методе render().
 // TODO: сейчас я не считаю высоту, если есть rowspan, т.к. не знаю высоту следующей строки. Может быть нужно её учитывать
 func (r *Row) setHeight(c *cell) {
-	calcHeight := c.font.Height(c.fontSize).MM() * unit.MM(len(c.textLines))
+	if c.font != nil {
+		calcHeight := c.font.Height(c.fontSize).MM() * unit.MM(len(c.textLines))
 
-	if calcHeight > r.height && c.rowspan < 2 {
-		r.height = calcHeight
+		if calcHeight > r.height && c.rowspan < 2 {
+			r.height = calcHeight
+		}
 	}
 
 	if c.static && c.height > r.height {
@@ -661,9 +720,13 @@ func (r *Row) updateIndexes(c *cell) {
 type cell struct {
 	id         uint8
 	font       *font.Font
+	image      *image.Image
 	textLines  []font.Text
+	imageScale float64
 	width      unit.MM
 	height     unit.MM
+	offsetH    unit.MM
+	offsetV    unit.MM
 	fontSize   unit.PT
 	borderSize unit.PT
 	borderMask uint8
@@ -696,6 +759,17 @@ func (c *cell) setTextLines(text string) {
 func (c *cell) render(buf *buffer.Buffer, x, y unit.MM) {
 	if c.borderMask != 0 {
 		renderBorder(buf, x, y, c.width, c.height, c.borderMask, c.borderSize)
+	}
+
+	if c.image != nil {
+		h := c.imageHeight()
+		w := c.imageWidth(h)
+		dy := c.imageDy(h)
+		dx := c.imageDx(w)
+
+		buf.WriteImage(x+dx, y+dy, w, h, c.image.Alias())
+
+		return
 	}
 
 	if len(c.textLines) == 0 {
@@ -758,4 +832,48 @@ func (c *cell) lineDy(index int) (dy unit.MM) {
 	}
 
 	return dy
+}
+
+func (c *cell) imageDx(width unit.MM) (dx unit.MM) {
+	dx = c.offsetH
+
+	switch c.alignH {
+	case alignR:
+		dx += c.width - width
+	case alignC:
+		dx += (c.width - width) / 2
+	default:
+		dx += 0
+	}
+
+	return dx
+}
+
+func (c *cell) imageDy(height unit.MM) (dy unit.MM) {
+	dy = height + c.offsetV
+
+	switch c.alignV {
+	case alignB:
+		dy += c.height - height
+	case alignM:
+		dy += (c.height - height) / 2
+	default:
+		dy += 0
+	}
+
+	return dy
+}
+
+func (c *cell) imageHeight() (h unit.MM) {
+	return c.height * unit.MM(c.imageScale)
+}
+
+func (c *cell) imageWidth(height unit.MM) (w unit.MM) {
+	imgW := c.image.Width()
+	imgH := c.image.Height()
+	scale := height / unit.MM(imgH)
+
+	w = unit.MM(imgW) * scale
+
+	return w
 }

@@ -28,28 +28,41 @@ const (
 )
 
 type CellOptions struct {
-	ID         uint8
-	Colspan    uint8
-	Rowspan    uint8
-	Align      string
-	Border     string
-	Font       string
-	Height     unit.MM
-	BorderSize unit.PT
-	FontSize   unit.PT
-	Wrap       bool
+	ID          uint8
+	Colspan     uint8
+	Rowspan     uint8
+	Align       string
+	Border      string
+	Font        string
+	PlaceHolder string
+	Scale       float64
+	OffsetH     unit.MM
+	OffsetV     unit.MM
+	Height      unit.MM
+	BorderSize  unit.PT
+	FontSize    unit.PT
+	Wrap        bool
 }
 
 type NodeOptions struct {
 	Border     string
 	BorderSize unit.PT
 	Spacing    unit.MM
-	IndentX    unit.MM
-	IndentY    unit.MM
+	IndentH    unit.MM
+	IndentV    unit.MM
 	Ledge      unit.MM
 }
 
-func getOptions[T CellOptions | NodeOptions](opts []T) T {
+type TableOptions struct {
+	Border     string
+	BorderSize unit.PT
+	IndentH    unit.MM
+	IndentV    unit.MM
+	SpacingH   unit.MM
+	SpacingV   unit.MM
+}
+
+func getOptions[T CellOptions | NodeOptions | TableOptions](opts []T) T {
 	var opt T
 	if len(opts) > 0 {
 		opt = opts[0]

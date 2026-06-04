@@ -6,22 +6,27 @@ import (
 )
 
 func (upd UPD) fillTemplate(c *pdf_craft.Core) ([]byte, error) {
+	err := c.ReadImage("1691194.png", "1691194")
+	if err != nil {
+		return nil, err
+	}
+
 	template := pdf_craft.New(c)
 
 	headBlock := template.Block()
 
 	headBlock.Slot().
-		Add(upd.titleHeader)
+		Fill(upd.titleHeader)
 
 	headBlock.Slot(
 		pdf_craft.NodeOptions{
-			IndentX: 1,
+			IndentH: 1,
 			Ledge:   5,
 			Border:  "L",
 		},
 	).
-		Add(upd.numberHeader).
-		Add(upd.requisites)
+		Fill(upd.numberHeader).
+		Fill(upd.requisites)
 
 	tableColumns := []unit.MM{21, 7, 83, 7, 7, 10, 15, 15, 20, 13, 13, 20, 20, 8, 10, 22}
 
@@ -33,6 +38,11 @@ func (upd UPD) fillTemplate(c *pdf_craft.Core) ([]byte, error) {
 
 	template.Repeater(upd).
 		Repeat(tableDetails(tableColumns))
+
+	template.Block().
+		Fill(upd.tableFooter(tableColumns)).
+		Fill(upd.signatories).
+		Fill(upd.shippingHeaders)
 
 	template.Render()
 
@@ -54,7 +64,7 @@ func (upd UPD) titleHeader(slot *pdf_craft.Slot) {
 func (upd UPD) numberHeader(slot *pdf_craft.Slot) {
 	numbersDates := slot.Block(
 		pdf_craft.NodeOptions{
-			IndentX: 1,
+			IndentH: 1,
 		},
 	)
 
@@ -64,17 +74,17 @@ func (upd UPD) numberHeader(slot *pdf_craft.Slot) {
 	table.Row().
 		Label("Счет-фактура").
 		Cell("№", pdf_craft.CellOptions{Align: "CB"}).
-		FormC(upd.SfNum, false).
+		Blank(upd.SfNum, "C").
 		Cell("от", pdf_craft.CellOptions{Align: "CB"}).
-		FormC(upd.SfDate, false).
+		Blank(upd.SfDate, "C").
 		Paragraph("(1)")
 
 	table.Row().
 		Label("Исправление").
 		Cell("№", pdf_craft.CellOptions{Align: "CB"}).
-		FormC("", false).
+		Blank("", "").
 		Cell("от", pdf_craft.CellOptions{Align: "CB"}).
-		FormC("", false).
+		Blank("", "").
 		Paragraph("(1а)")
 
 	table = numbersDates.Slot().
@@ -88,41 +98,43 @@ func (upd UPD) numberHeader(slot *pdf_craft.Slot) {
 func (upd UPD) requisites(slot *pdf_craft.Slot) {
 	requisites := slot.Block(
 		pdf_craft.NodeOptions{
-			IndentX: 1,
-			IndentY: 5,
+			IndentH: 1,
+			IndentV: 5,
 		},
 	)
 
+	requisitesColumns := []unit.MM{45, 80, 10}
+
 	table := requisites.Slot().
-		Table(10, []unit.MM{45, 80, 10})
+		Table(10, requisitesColumns)
 
 	table.Row().
 		LabelHead("Продавец:").
-		FormL(upd.OrgPrintName, true).
+		Form(upd.OrgPrintName, "L").
 		Paragraph("(2)")
 	table.Row().
 		Label("Адрес:").
-		FormL(upd.OrgPrintAddress, true).
+		Form(upd.OrgPrintAddress, "L").
 		Paragraph("(2а)")
 	table.Row().
 		Label("ИНН/КПП продавца:").
-		FormL(upd.OrgInnKpp, false).
+		Blank(upd.OrgInnKpp, "L").
 		Paragraph("(2б)")
 	table.Row().
 		Label("Грузоотправитель и его адрес:").
-		FormL(upd.ShipperPrintNameAddress, false).
+		Form(upd.ShipperPrintNameAddress, "L").
 		Paragraph("(3)")
 	table.Row().
 		Label("Грузополучатель и его адрес:").
-		FormL(upd.ConsigneePrintNameAddress, false).
+		Form(upd.ConsigneePrintNameAddress, "L").
 		Paragraph("(4)")
 	table.Row().
 		Label("К платежно-расчетному документу №:").
-		FormL(upd.PaymentAndSettlementDocument, false).
+		Blank(upd.PaymentAndSettlementDocument, "L").
 		Paragraph("(5)")
 	table.Row().
 		Label("Документ об отгрузке:").
-		FormL(upd.ShippingDocuments, true).
+		Form(upd.ShippingDocuments, "L").
 		Paragraph("(5а)")
 	table.Row().
 		Cell(
@@ -135,34 +147,34 @@ func (upd UPD) requisites(slot *pdf_craft.Slot) {
 		)
 	table.Row().
 		Label("передачи имущественных прав №:").
-		FormL("", false)
+		Blank("", "")
 	table.Row().
 		Label("исправление №:").
-		FormL("", false).
+		Blank("", "").
 		Paragraph("(5б)")
 
 	table = requisites.Slot().
-		Table(5, []unit.MM{45, 80, 10})
+		Table(5, requisitesColumns)
 
 	table.Row().
 		LabelHead("Покупатель:").
-		FormL(upd.SupplierPrintName, true).
+		Form(upd.SupplierPrintName, "L").
 		Paragraph("(6)")
 	table.Row().
 		Label("Адрес:").
-		FormL(upd.SupplierPrintAddress, true).
+		Form(upd.SupplierPrintAddress, "L").
 		Paragraph("(6а)")
 	table.Row().
 		Label("ИНН/КПП покупателя:").
-		FormL(upd.SupplierInnKpp, false).
+		Blank(upd.SupplierInnKpp, "L").
 		Paragraph("(6б)")
 	table.Row().
 		Label("Валюта: наименование, код:").
-		FormL(upd.CurrencyNameCode, false).
+		Blank(upd.CurrencyNameCode, "L").
 		Paragraph("(7)")
 	table.Row().
 		Cell("Идентификатор государственного контракта,\nдоговора (соглашения) (при наличии):", pdf_craft.CellOptions{Align: "LB", Wrap: true}).
-		FormL("", false).
+		Blank("", "").
 		Paragraph("(8)")
 }
 
@@ -262,4 +274,81 @@ func tableDetails(columns []unit.MM) pdf_craft.RepeaterFiller {
 			Cell(ordered[14], pdf_craft.CellOptions{ID: 14, Align: "LB", Border: "o"}).
 			Cell(ordered[15], pdf_craft.CellOptions{ID: 15, Align: "LB", Border: "o"})
 	}
+}
+
+func (upd UPD) tableFooter(columns []unit.MM) pdf_craft.BlockFiller {
+	return func(block *pdf_craft.Block) {
+		table := block.Slot().
+			Table(1, columns)
+
+		table.Row().
+			Cell("", pdf_craft.CellOptions{Border: "tblR", Height: 3}).
+			Cell("Всего к оплате:", pdf_craft.CellOptions{Align: "RB", Border: "o", Colspan: 7, Font: pdf_craft.FontBold}).
+			Cell(upd.AmountWithoutVatTotal, pdf_craft.CellOptions{Align: "RB", Border: "o"}).
+			Cell("X", pdf_craft.CellOptions{Align: "CB", Border: "o", Colspan: 2, Font: pdf_craft.FontBold}).
+			Cell(upd.AmountVatTotal, pdf_craft.CellOptions{Align: "RB", Border: "o"}).
+			Cell(upd.AmountWithVatTotal, pdf_craft.CellOptions{Align: "RB", Border: "o"}).
+			Cell("", pdf_craft.CellOptions{Border: "o", Colspan: 3})
+	}
+}
+
+func (upd UPD) signatories(block *pdf_craft.Block) {
+	table := block.Slot(pdf_craft.NodeOptions{
+		IndentH: 21,
+		Border:  "LB",
+		Ledge:   3,
+	}).
+		Table(
+			4,
+			[]unit.MM{38, 47, 47, 38, 47, 47},
+			pdf_craft.TableOptions{SpacingH: 1, IndentH: 1})
+
+	table.Row().
+		Cell("Руководитель организации\nили иное уполномоченное лицо", pdf_craft.CellOptions{Height: 10, Align: "LB", Wrap: true}).
+		Image("1691194", pdf_craft.CellOptions{Align: "BC", Border: "b", PlaceHolder: "[электронная подпись]", OffsetV: 3}).
+		Blank(upd.OrgChiefName, "CB").
+		Cell("Главный бухгалтер\nили иное уполномоченное лицо", pdf_craft.CellOptions{Height: 10, Align: "LB", Wrap: true}).
+		Blank("[электронная подпись]", "CB").
+		Blank(upd.OrgAccountantName, "CB")
+	table.Row().
+		Underscore("").
+		Underscore("подпись").
+		Underscore("(Ф.И.О.)").
+		Underscore("").
+		Underscore("подпись").
+		Underscore("(Ф.И.О.)")
+	table.Row().
+		Cell("Индивидуальный предприниматель\nили иное уполномоченное лицо", pdf_craft.CellOptions{Height: 10, Align: "LB", Wrap: true}).
+		Blank("", "").
+		Blank("", "").
+		BlankSpan("", "", 3)
+	table.Row().
+		Underscore("").
+		Underscore("подпись").
+		Underscore("(Ф.И.О.)").
+		UnderscoreSpan("(основной государственный регистрационный номер индивидуального предпринимателя и дата присвоения такого номера)", 3)
+}
+
+func (upd UPD) shippingHeaders(block *pdf_craft.Block) {
+	table := block.Slot().
+		Table(4, []unit.MM{40, 240, 10},
+			pdf_craft.TableOptions{
+				IndentV: 5,
+			},
+		)
+
+	table.Row().
+		Label("Основание передачи (сдачи) / получения (приемки)").
+		Blank(upd.Contract, "LB").
+		Paragraph("[10]")
+	table.Row().
+		Underscore("").
+		Underscore("(договор; доверенность и др.)")
+	table.Row().
+		Label("Данные о транспортировке и грузе").
+		BlankEmpty().
+		Paragraph("[11]")
+	table.Row().
+		Underscore("").
+		Underscore("(транспортная накладная, поручение экспедитору, экспедиторская / складская расписка и др. / масса нетто/ брутто груза, если не приведены ссылки на транспортные документы, содержащие эти сведения)")
 }

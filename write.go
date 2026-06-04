@@ -6,6 +6,7 @@ import (
 
 	"github.com/eugene-static/pdf-craft/internal/buffer"
 	"github.com/eugene-static/pdf-craft/internal/font"
+	"github.com/eugene-static/pdf-craft/internal/image"
 )
 
 const (
@@ -35,19 +36,29 @@ func (core *Core) writeResources() {
 		return
 	}
 
-	type fontResource struct {
+	type resource struct {
 		alias  string
 		objNum int64
 	}
 
-	fontResources := make([]fontResource, 0, len(core.fonts))
+	fontResources := make([]resource, 0, len(core.fonts))
+	imageResources := make([]resource, 0, len(core.images))
 
 	for alias, f := range core.fonts {
 		fontObjNum := core.writeFont(f, alias)
 
-		fontResources = append(fontResources, fontResource{
+		fontResources = append(fontResources, resource{
 			alias:  alias,
 			objNum: fontObjNum,
+		})
+	}
+
+	for alias, img := range core.images {
+		imageObjNum := core.writeImage(img)
+
+		imageResources = append(imageResources, resource{
+			alias:  alias,
+			objNum: imageObjNum,
 		})
 	}
 
@@ -57,14 +68,24 @@ func (core *Core) writeResources() {
 
 	b.StartObj(objNumResources)
 	b.OpenObjectParameters()
+
 	b.WriteFieldString("/Font", "")
 	b.OpenObjectParameters()
 
-	for _, resource := range fontResources {
-		b.WriteRef("/"+resource.alias, resource.objNum)
+	for _, res := range fontResources {
+		b.WriteRef("/"+res.alias, res.objNum)
 	}
 
 	b.CloseObjectParameters()
+	b.WriteFieldString("/XObject", "")
+	b.OpenObjectParameters()
+
+	for _, res := range imageResources {
+		b.WriteRef("/"+res.alias, res.objNum)
+	}
+
+	b.CloseObjectParameters()
+
 	b.CloseObjectParameters()
 	b.EndObj()
 }
@@ -177,9 +198,9 @@ func (core *Core) writeFont(f *font.Font, alias string) int64 {
 	// "12 0 obj<< /Length %font_bytes_length /Length1 %font_bytes_length >>stream\nfont_bytes\nendstream\nendobj\n"
 	objNum = core.newObject()
 
-	fontBytes := f.Bytes()
+	fontRawBytes := f.Bytes()
 
-	fontCompressedBytes, ok := f.CompressedBytes()
+	fontBytes, ok := f.CompressedBytes()
 	if !ok {
 		subset, err := f.Subset()
 		if err != nil {
@@ -188,25 +209,27 @@ func (core *Core) writeFont(f *font.Font, alias string) int64 {
 			return 0
 		}
 
-		fontCompressedBytes, err = core.comp.compress(subset)
+		compressedBytes, err := core.comp.compress(subset)
 		if err != nil {
 			core.writeError(err)
 
 			return 0
 		}
 
-		f.SaveCompressedBytes(fontCompressedBytes)
+		f.SaveCompressedBytes(compressedBytes)
+
+		fontBytes = compressedBytes
 	}
 
 	b.StartObj(objNum)
 	b.OpenObjectParameters()
 	b.WriteFieldString("/Filter", "/FlateDecode")
-	b.WriteFieldInt("/Length", len(fontCompressedBytes))
-	b.WriteFieldInt("/Length1", len(fontBytes))
+	b.WriteFieldInt("/Length", len(fontBytes))
+	b.WriteFieldInt("/Length1", len(fontRawBytes))
 	b.CloseObjectParameters()
 	b.StartStream()
 
-	_, err = b.Write(fontCompressedBytes)
+	_, err = b.Write(fontBytes)
 	if err != nil {
 		return 0
 	}
@@ -215,6 +238,104 @@ func (core *Core) writeFont(f *font.Font, alias string) int64 {
 	b.EndObj()
 
 	return fontNum
+}
+
+func (core *Core) writeImage(img *image.Image) int64 {
+	if core.err() != nil {
+		return 0
+	}
+
+	b := core.mainBuffer
+
+	var alphaObjNum int64
+
+	alphaBytes := img.Alpha()
+	if alphaBytes != nil {
+		alphaObjNum = core.newObject()
+
+		compressedBytes, ok := img.AlphaCompressed()
+		if !ok {
+			compBytes, err := core.comp.compress(alphaBytes)
+			if err != nil {
+				core.writeError(err)
+
+				return 0
+			}
+
+			img.SaveCompressedAlpha(compBytes)
+
+			compressedBytes = compBytes
+		}
+
+		b.StartObj(alphaObjNum)
+		b.OpenObjectParameters()
+		b.WriteFieldString("/Type", "/XObject")
+		b.WriteFieldString("/Subtype", "/Image")
+		b.WriteFieldInt("/Width", img.Width())
+		b.WriteFieldInt("/Height", img.Height())
+		b.WriteFieldString("/ColorSpace", "/DeviceGray")
+		b.WriteFieldInt("/BitsPerComponent", 8)
+		b.WriteFieldString("/Filter", "/FlateDecode")
+		b.WriteFieldInt("/Length", len(compressedBytes))
+		b.CloseObjectParameters()
+		b.StartStream()
+
+		_, err := b.Write(compressedBytes)
+		if err != nil {
+			core.writeError(err)
+
+			return 0
+		}
+
+		b.EndStream()
+		b.EndObj()
+	}
+
+	objNum := core.newObject()
+
+	imageBytes, ok := img.RGBCompressed()
+	if !ok {
+		compressedBytes, err := core.comp.compress(img.RGB())
+		if err != nil {
+			core.writeError(err)
+
+			return 0
+		}
+
+		img.SaveCompressedRGB(compressedBytes)
+
+		imageBytes = compressedBytes
+	}
+
+	b.StartObj(objNum)
+	b.OpenObjectParameters()
+	b.WriteFieldString("/Type", "/XObject")
+	b.WriteFieldString("/Subtype", "/Image")
+	b.WriteFieldInt("/Width", img.Width())
+	b.WriteFieldInt("/Height", img.Height())
+	b.WriteFieldString("/ColorSpace", "/DeviceRGB")
+	b.WriteFieldInt("/BitsPerComponent", 8)
+	b.WriteFieldString("/Filter", "/FlateDecode")
+	b.WriteFieldInt("/Length", len(imageBytes))
+
+	if alphaObjNum > 0 {
+		b.WriteRef("/SMask", alphaObjNum)
+	}
+
+	b.CloseObjectParameters()
+	b.StartStream()
+
+	_, err := b.Write(imageBytes)
+	if err != nil {
+		core.writeError(err)
+
+		return 0
+	}
+
+	b.EndStream()
+	b.EndObj()
+
+	return objNum
 }
 
 func (core *Core) writePages() {

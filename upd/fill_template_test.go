@@ -8,7 +8,7 @@ import (
 )
 
 func BenchmarkUPD_FillTemplate(b *testing.B) {
-	upd := NewUPD(20000)
+	upd := NewUPD(3333)
 
 	template, err := prepareTemplate()
 

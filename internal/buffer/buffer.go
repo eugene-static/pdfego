@@ -90,6 +90,18 @@ func (b *Buffer) WriteText(font *font.Font, x, y unit.MM, text string) {
 	b.content.WriteString("> Tj\n")
 }
 
+// q 50.50 0 0 -90.26 56.69 -28.35cm /1691194 Do Q
+// q [W] 0 0 [H] [X] [Y] cm /[ImageAlias] Do Q
+func (b *Buffer) WriteImage(x, y, w, h unit.MM, alias string) {
+	b.content.WriteString("q ")
+	b.writeFloat64(w.PT().Float64())
+	b.writeString(" 0 0 ")
+	b.writeFloat64(h.PT().Float64())
+	b.space()
+	b.writeXY(x, y)
+	b.writeString(" cm /", alias, " Do Q\n")
+}
+
 // /W [1 [100] 3 [95 83 99]]
 func (b *Buffer) WriteGlyphWidthTable(glyphs []font.Glyph) {
 	b.writeString("/W [")
@@ -247,7 +259,7 @@ func (b *Buffer) WriteLine(bw unit.PT, x0, y0, x1, y1 unit.MM) {
 	b.writeXY(x0, y0)
 	b.writeString(" m ")
 	b.writeXY(x1, y1)
-	b.writeString(" l S ")
+	b.writeString(" l S\n")
 }
 
 // 1 w x0 y0 w h re S
@@ -257,7 +269,7 @@ func (b *Buffer) WriteRect(bw unit.PT, x, y, w, h unit.MM) {
 	b.writeXY(x, y)
 	b.space()
 	b.writeWH(w, h)
-	b.writeString(" re S ")
+	b.writeString(" re S\n")
 }
 
 func (b *Buffer) write(data []byte) {

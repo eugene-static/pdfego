@@ -2,9 +2,12 @@ package pdf_craft
 
 import (
 	"compress/zlib"
+	"fmt"
+	"os"
 
 	"github.com/eugene-static/pdf-craft/internal/buffer"
 	"github.com/eugene-static/pdf-craft/internal/font"
+	"github.com/eugene-static/pdf-craft/internal/image"
 	"github.com/eugene-static/pdf-craft/pkg/unit"
 )
 
@@ -24,6 +27,7 @@ const (
 type Core struct {
 	mainBuffer *buffer.Buffer
 	fonts      map[string]*font.Font
+	images     map[string]*image.Image
 	comp       compressor
 	page       page
 	fontSize   unit.PT
@@ -58,6 +62,7 @@ func NewCore(orientation string) *Core {
 		mainBuffer: buffer.New(bufferSize),
 		comp:       comp,
 		fonts:      make(map[string]*font.Font),
+		images:     make(map[string]*image.Image),
 		page:       pg,
 		offsets:    offsets,
 	}
@@ -116,6 +121,33 @@ func (core *Core) DefaultBorderSize() unit.PT {
 	return core.borderSize
 }
 
+func (core *Core) ReadImage(path, alias string) error {
+	imageBytes, err := os.ReadFile(path)
+	if err != nil {
+		return err
+	}
+
+	img, err := image.New(alias, imageBytes)
+	if err != nil {
+		return err
+	}
+
+	core.images[alias] = img
+
+	return nil
+}
+
+func (core *Core) AddImage(data []byte, alias string) error {
+	img, err := image.New(alias, data)
+	if err != nil {
+		return err
+	}
+
+	core.images[alias] = img
+
+	return nil
+}
+
 func (core *Core) writeError(err error) {
 	core.error = err
 }
@@ -130,8 +162,29 @@ func (core *Core) bytes() []byte {
 }
 
 func (core *Core) font(alias string) *font.Font {
+	fnt, ok := core.fonts[alias]
+	if !ok {
+		err := fmt.Errorf("не найден шрифт с таким именем: %s", alias)
 
-	return core.fonts[alias]
+		core.writeError(err)
+
+		return nil
+	}
+
+	return fnt
+}
+
+func (core *Core) image(alias string) *image.Image {
+	img, ok := core.images[alias]
+	if !ok {
+		err := fmt.Errorf("не найдено изображение с таким именем: %s", alias)
+
+		core.writeError(err)
+
+		return nil
+	}
+
+	return img
 }
 
 func (core *Core) newObject() int64 {
