@@ -170,7 +170,7 @@ func NewUPD(detailsNum int) UPD {
 		Status:                       "1",
 		SfNum:                        "1234567890",
 		SfDate:                       time.Now().Format("02.01.2006"),
-		LkID:                         "LkID",
+		LkID:                         "00000000001",
 		OrgPrintName:                 "ОБЩЕСТВО С ОГРАНИЧЕННОЙ ОТВЕТСТВЕННОСТЬЮ \"РВБ\"",
 		OrgPrintAddress:              "142181, Московская обл, г.о. Подольск, д Коледино, тер. Индустриальный парк Коледино, д. 6, стр. 1",
 		OrgInnKpp:                    "9714053621/507401001",

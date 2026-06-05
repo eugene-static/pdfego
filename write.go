@@ -19,7 +19,7 @@ func (core *Core) startDocument() {
 }
 
 func (core *Core) finishDocument() {
-	core.writePage()
+	//core.renderPage()
 	core.writePages()
 	core.writeResources()
 
@@ -249,11 +249,10 @@ func (core *Core) writeImage(img *image.Image) int64 {
 
 	var alphaObjNum int64
 
-	alphaBytes := img.Alpha()
+	alphaBytes, ok := img.Alpha()
 	if alphaBytes != nil {
 		alphaObjNum = core.newObject()
 
-		compressedBytes, ok := img.AlphaCompressed()
 		if !ok {
 			compBytes, err := core.comp.compress(alphaBytes)
 			if err != nil {
@@ -264,7 +263,7 @@ func (core *Core) writeImage(img *image.Image) int64 {
 
 			img.SaveCompressedAlpha(compBytes)
 
-			compressedBytes = compBytes
+			alphaBytes = compBytes
 		}
 
 		b.StartObj(alphaObjNum)
@@ -276,11 +275,11 @@ func (core *Core) writeImage(img *image.Image) int64 {
 		b.WriteFieldString("/ColorSpace", "/DeviceGray")
 		b.WriteFieldInt("/BitsPerComponent", 8)
 		b.WriteFieldString("/Filter", "/FlateDecode")
-		b.WriteFieldInt("/Length", len(compressedBytes))
+		b.WriteFieldInt("/Length", len(alphaBytes))
 		b.CloseObjectParameters()
 		b.StartStream()
 
-		_, err := b.Write(compressedBytes)
+		_, err := b.Write(alphaBytes)
 		if err != nil {
 			core.writeError(err)
 
@@ -293,9 +292,9 @@ func (core *Core) writeImage(img *image.Image) int64 {
 
 	objNum := core.newObject()
 
-	imageBytes, ok := img.RGBCompressed()
+	imageBytes, ok := img.RGB()
 	if !ok {
-		compressedBytes, err := core.comp.compress(img.RGB())
+		compressedBytes, err := core.comp.compress(imageBytes)
 		if err != nil {
 			core.writeError(err)
 

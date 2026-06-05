@@ -26,7 +26,7 @@ func BenchmarkUPD_FillTemplate(b *testing.B) {
 }
 
 func TestUPD_FillTemplate(t *testing.T) {
-	upd := NewUPD(1)
+	upd := NewUPD(10)
 
 	template, err := prepareTemplate()
 	if err != nil {

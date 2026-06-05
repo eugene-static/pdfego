@@ -3,20 +3,18 @@ package image
 import (
 	"bytes"
 	"image"
-	"image/color"
 	"image/png"
 )
 
 type Image struct {
-	alias           string
-	rgbData         []byte
-	rgbCompressed   []byte
-	alphaData       []byte
-	alphaCompressed []byte
-	width           int
-	height          int
-	colored         bool
-	hasAlpha        bool
+	alias     string
+	rgbData   []byte
+	alphaData []byte
+	width     int
+	height    int
+	rgbComp   bool
+	alphaComp bool
+	hasAlpha  bool
 }
 
 func New(alias string, data []byte) (*Image, error) {
@@ -71,7 +69,6 @@ func New(alias string, data []byte) (*Image, error) {
 		alphaData: alpha,
 		width:     width,
 		height:    height,
-		colored:   true,
 		hasAlpha:  hasAlpha,
 	}, nil
 }
@@ -80,20 +77,12 @@ func (img *Image) Alias() string {
 	return img.alias
 }
 
-func (img *Image) RGB() []byte {
-	return img.rgbData
+func (img *Image) RGB() ([]byte, bool) {
+	return img.rgbData, img.rgbComp
 }
 
-func (img *Image) RGBCompressed() ([]byte, bool) {
-	return img.rgbCompressed, img.rgbCompressed != nil
-}
-
-func (img *Image) Alpha() []byte {
-	return img.alphaData
-}
-
-func (img *Image) AlphaCompressed() ([]byte, bool) {
-	return img.alphaCompressed, img.alphaCompressed != nil
+func (img *Image) Alpha() ([]byte, bool) {
+	return img.alphaData, img.alphaComp
 }
 
 func (img *Image) Width() int {
@@ -104,39 +93,14 @@ func (img *Image) Height() int {
 	return img.height
 }
 
-func (img *Image) ColorSpace() string {
-	if img.colored {
-		return "RGB"
-	}
-
-	return "Gray"
-}
-
 func (img *Image) SaveCompressedRGB(data []byte) {
-	img.rgbCompressed = data
+	img.rgbData = data
+
+	img.rgbComp = true
 }
 
 func (img *Image) SaveCompressedAlpha(data []byte) {
-	img.alphaCompressed = data
-}
+	img.alphaData = data
 
-// Удаляет альфа-канал из RGBA (просто отбрасывает байты A).
-func convertRGBAToRGB(rgba []byte) []byte {
-	rgb := make([]byte, len(rgba)/4*3)
-	for i, j := 0, 0; i < len(rgba); i, j = i+4, j+3 {
-		copy(rgb[j:j+3], rgba[i:i+3])
-	}
-	return rgb
-}
-
-func convertToRGB(bounds image.Rectangle, colFunc func(x, y int) color.Color) []byte {
-	rgba := image.NewRGBA(bounds)
-
-	for y := bounds.Min.Y; y < bounds.Max.Y; y++ {
-		for x := bounds.Min.X; x < bounds.Max.X; x++ {
-			rgba.Set(x, y, colFunc(x, y))
-		}
-	}
-
-	return convertRGBAToRGB(rgba.Pix)
+	img.alphaComp = true
 }

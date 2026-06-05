@@ -20,6 +20,11 @@ const (
 	Landscape = "L"
 )
 
+var (
+	ColorBlue = font.Blue
+	ColorRed  = font.Red
+)
+
 const (
 	bufferSize = 1 << 16
 )
@@ -109,8 +114,11 @@ func (core *Core) SetDefaultBorderSize(size unit.PT) {
 	core.borderSize = size
 }
 
-func (core *Core) SetMargin(margin unit.MM) {
-	core.page.margin = margin
+func (core *Core) SetMargins(left, top, right, bottom unit.MM) {
+	core.page.marginLeft = left
+	core.page.marginTop = top
+	core.page.marginRight = right
+	core.page.marginBottom = bottom
 }
 
 func (core *Core) DefaultFontSize() unit.PT {
@@ -221,6 +229,19 @@ func (core *Core) newPage() {
 }
 
 func (core *Core) renderPage() {
+	if core.err() != nil {
+		return
+	}
+
+	if core.page.watermarkBuffer != nil && core.page.watermarkBuffer.Len() > 0 {
+		_, err := core.page.buffer.Write(core.page.watermarkBuffer.Bytes())
+		if err != nil {
+			core.writeError(err)
+
+			return
+		}
+	}
+
 	if core.page.buffer.Len() > 0 {
 		core.writePage()
 
@@ -229,24 +250,23 @@ func (core *Core) renderPage() {
 }
 
 type page struct {
-	buffer       *buffer.Buffer
-	headerBuffer *buffer.Buffer
-	footerBuffer *buffer.Buffer
-	width        unit.MM
-	height       unit.MM
-	margin       unit.MM
-	marginLeft   unit.MM
-	marginRight  unit.MM
-	marginTop    unit.MM
-	marginBottom unit.MM //TODO:
+	buffer          *buffer.Buffer
+	headerBuffer    *buffer.Buffer
+	watermarkBuffer *buffer.Buffer
+	width           unit.MM
+	height          unit.MM
+	marginLeft      unit.MM
+	marginRight     unit.MM
+	marginTop       unit.MM
+	marginBottom    unit.MM
 }
 
 func (p *page) x0y0() (unit.MM, unit.MM) {
-	return p.margin, p.margin - p.height
+	return p.marginLeft, p.marginTop - p.height
 }
 
 func (p *page) isBelowBottomBorder(y unit.MM) bool {
-	return y+p.margin > 0
+	return y+p.marginBottom > 0
 }
 
 func (p *page) newHeader() *buffer.Buffer {
@@ -265,6 +285,20 @@ func (p *page) newHeader() *buffer.Buffer {
 
 func (p *page) removeHeader() {
 	p.headerBuffer.Reset()
+}
+
+func (p *page) newWatermark() *buffer.Buffer {
+	if p.watermarkBuffer != nil {
+		p.watermarkBuffer.Reset()
+
+		return p.watermarkBuffer
+	}
+
+	buf := buffer.New(bufferSize)
+
+	p.watermarkBuffer = buf
+
+	return buf
 }
 
 type compressor struct {

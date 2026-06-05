@@ -90,7 +90,22 @@ func (b *Buffer) WriteText(font *font.Font, x, y unit.MM, text string) {
 	b.content.WriteString("> Tj\n")
 }
 
-// q 50.50 0 0 -90.26 56.69 -28.35cm /1691194 Do Q
+// r g b rg
+func (b *Buffer) WriteColor(red, green, blue float64) {
+	b.writeFloat64(red)
+	b.space()
+	b.writeFloat64(green)
+	b.space()
+	b.writeFloat64(blue)
+	b.WriteStringLn(" rg")
+	b.writeFloat64(red)
+	b.space()
+	b.writeFloat64(green)
+	b.space()
+	b.writeFloat64(blue)
+	b.WriteStringLn(" RG")
+}
+
 // q [W] 0 0 [H] [X] [Y] cm /[ImageAlias] Do Q
 func (b *Buffer) WriteImage(x, y, w, h unit.MM, alias string) {
 	b.content.WriteString("q ")

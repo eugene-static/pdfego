@@ -2,6 +2,7 @@ package pdf_craft
 
 import (
 	"github.com/eugene-static/pdf-craft/internal/buffer"
+	"github.com/eugene-static/pdf-craft/internal/font"
 	"github.com/eugene-static/pdf-craft/pkg/unit"
 )
 
@@ -36,7 +37,12 @@ type NodeOptions struct {
 	Ledge      unit.MM
 }
 
+type WatermarkOptions struct {
+	Align string
+}
+
 type TableOptions struct {
+	Color      font.Color
 	Border     string
 	BorderSize unit.PT
 	IndentH    unit.MM
@@ -63,10 +69,11 @@ type CellOptions struct {
 	Height      unit.MM
 	BorderSize  unit.PT
 	FontSize    unit.PT
+	Color       font.Color
 	Wrap        bool
 }
 
-func getOptions[T CellOptions | NodeOptions | TableOptions | RowOptions](opts []T) T {
+func getOptions[T CellOptions | NodeOptions | TableOptions | RowOptions | WatermarkOptions](opts []T) T {
 	var opt T
 	if len(opts) > 0 {
 		opt = opts[0]

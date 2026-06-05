@@ -259,6 +259,7 @@ func (f *Font) FullText(text string, size unit.PT) Text {
 func (f *Font) SplitText(text string, size unit.PT, width unit.MM, buf []Text) []Text {
 	segments := buf[:0]
 	f.manager.textBuffer = f.manager.textBuffer[:0]
+
 	targetWidth := width.PT()
 
 	for _, r := range text {
@@ -267,7 +268,7 @@ func (f *Font) SplitText(text string, size unit.PT, width unit.MM, buf []Text) [
 	}
 
 	start := 0
-	for start < len(f.manager.textBuffer) && !f.manager.wrapSymbols(start) {
+	for start < len(f.manager.textBuffer) && (!f.manager.wrapSymbols(start) || targetWidth == 0) {
 		start++
 	}
 

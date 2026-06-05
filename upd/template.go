@@ -6,10 +6,10 @@ import (
 
 func prepareTemplate() (*pdf_craft.Core, error) {
 	c := pdf_craft.NewCore(pdf_craft.Landscape)
-	c.SetMargin(3)
+	c.SetMargins(3, 3, 3, 8)
 	c.SetDefaultFontSize(6)
 	c.SetDefaultBorderSize(0.3)
-	//c.Compress()
+	c.Compress()
 
 	err := c.SetFontRegular("../fonts/LiberationSans-Regular.ttf")
 	if err != nil {
