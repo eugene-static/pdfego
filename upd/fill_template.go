@@ -546,7 +546,7 @@ func (upd UPD) watermark(block *pdf_craft.Block) {
 				SpacingH: 1,
 				SpacingV: 1,
 				Border:   "O",
-				Color:    pdf_craft.ColorBlue,
+				Color:    pdf_craft.NewColor(100, 100, 255),
 			})
 
 	opts := pdf_craft.CellOptions{

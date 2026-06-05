@@ -508,7 +508,7 @@ type Table struct {
 	cellsPool  []cell
 	rowspans   []uint8
 	rowIndex   uint8
-	color      font.Color
+	color      Color
 	border     uint8
 	borderSize unit.PT
 	indentH    unit.MM
@@ -555,9 +555,9 @@ func (t *Table) render(buf *buffer.Buffer, x, y unit.MM) {
 	x += t.indentH
 	y += t.indentV
 
-	if !t.color.IsBlack() {
+	if !t.color.isBlack() {
 		buf.WriteColor(t.color.RGB())
-		defer buf.WriteColor(font.Black.RGB())
+		defer buf.WriteColor(Black.RGB())
 	}
 
 	if t.border > 0 {
@@ -582,7 +582,7 @@ func (t *Table) render(buf *buffer.Buffer, x, y unit.MM) {
 
 			t.setCellHeight(ri, i)
 
-			t.cellsPool[i].render(buf, cx, cy)
+			t.cellsPool[i].render(buf, cx, cy, t.color)
 		}
 
 		cx += t.columns[ci] + t.spacingH
@@ -923,7 +923,7 @@ type cell struct {
 	id         uint8
 	font       *font.Font
 	image      *image.Image
-	color      font.Color
+	color      Color
 	textLines  []font.Text
 	imageScale float64
 	width      unit.MM
@@ -959,10 +959,10 @@ func (c *cell) setTextLines(text string) {
 }
 
 // BT /[FontAlias] [FontSize] Tf 1 0 0 1 [X] [Y] Tm <[TextHex]> Tj ET
-func (c *cell) render(buf *buffer.Buffer, x, y unit.MM) {
-	if !c.color.IsBlack() {
+func (c *cell) render(buf *buffer.Buffer, x, y unit.MM, parentColor Color) {
+	if !c.color.Equal(parentColor) {
 		buf.WriteColor(c.color.RGB())
-		defer buf.WriteColor(font.Black.RGB())
+		defer buf.WriteColor(parentColor.RGB())
 	}
 
 	if c.borderMask != 0 {

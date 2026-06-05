@@ -2,7 +2,6 @@ package pdf_craft
 
 import (
 	"github.com/eugene-static/pdf-craft/internal/buffer"
-	"github.com/eugene-static/pdf-craft/internal/font"
 	"github.com/eugene-static/pdf-craft/pkg/unit"
 )
 
@@ -28,6 +27,44 @@ const (
 	alignB = alignR
 )
 
+type Color struct {
+	r, g, b uint8
+}
+
+var (
+	Black   = Color{0, 0, 0}
+	White   = Color{255, 255, 255}
+	Red     = Color{255, 0, 0}
+	Green   = Color{0, 255, 0}
+	Blue    = Color{0, 0, 255}
+	Yellow  = Color{0, 255, 255}
+	Cyan    = Color{255, 0, 255}
+	Magenta = Color{255, 255, 0}
+)
+
+// NewColor инициализирует новый цвет Color
+//
+//	red, green, blue в диапазоне от 0 до 255.
+func NewColor(r, g, b uint8) Color {
+	return Color{r, g, b}
+}
+
+func NewColorFromHex(hex string) (Color, error) {
+	return Black, nil
+}
+
+func (c *Color) RGB() (r float64, g float64, b float64) {
+	return float64(c.r) / 255, float64(c.g) / 255, float64(c.b) / 255
+}
+
+func (c *Color) Equal(other Color) bool {
+	return c.r == other.r && c.g == other.g && c.b == other.b
+}
+
+func (c *Color) isBlack() bool {
+	return c.r == 0 && c.g == 0 && c.b == 0
+}
+
 type NodeOptions struct {
 	Border     string
 	BorderSize unit.PT
@@ -42,7 +79,7 @@ type WatermarkOptions struct {
 }
 
 type TableOptions struct {
-	Color      font.Color
+	Color      Color
 	Border     string
 	BorderSize unit.PT
 	IndentH    unit.MM
@@ -69,7 +106,7 @@ type CellOptions struct {
 	Height      unit.MM
 	BorderSize  unit.PT
 	FontSize    unit.PT
-	Color       font.Color
+	Color       Color
 	Wrap        bool
 }
 

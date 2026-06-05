@@ -19,7 +19,6 @@ func (core *Core) startDocument() {
 }
 
 func (core *Core) finishDocument() {
-	//core.renderPage()
 	core.writePages()
 	core.writeResources()
 
