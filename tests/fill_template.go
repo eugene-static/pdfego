@@ -38,18 +38,22 @@ func (dto DTO) fillTemplate(c *pdf_craft.Core) ([]byte, error) {
 	constructor.Watermark(pdf_craft.WatermarkOptions{Align: "RB"}).
 		Apply(dto.watermark)
 
+	constructor.Paginate(0)
+
 	constructor.
 		Build(dto.header).
 		Build(tableHeader(tableColumns))
 
 	constructor.Header().
 		Apply(tableNumberHeader(tableColumns))
+
 	constructor.Repeater(dto).
 		Repeat(tableDetails(tableColumns))
-	constructor.EndHeader().
-		Apply(dto.tableFooter(tableColumns))
+
+	constructor.ReleaseHeader()
 
 	constructor.
+		Build(dto.tableFooter(tableColumns)).
 		Build(dto.signatories).
 		Build(dto.shippingHeaders).
 		Build(dto.shippingBody)
@@ -60,7 +64,7 @@ func (dto DTO) fillTemplate(c *pdf_craft.Core) ([]byte, error) {
 }
 
 func (dto DTO) header(block *pdf_craft.Block) {
-	table := block.Slot().Table(3, []unit.MM{15, 5})
+	table := block.Slot().Table(3, pdf_craft.Columns(15, 5))
 
 	table.Row().
 		Cell("Универсальный передаточный документ", pdf_craft.CellOptions{Height: 10, Wrap: true, Colspan: 2, Align: "LT"})
@@ -487,7 +491,7 @@ func (dto DTO) watermark(block *pdf_craft.Block) {
 				SpacingH:    1,
 				SpacingV:    1,
 				Border:      "O",
-				TextColor:   pdf_craft.ColorSteelBlue,
+				TextColor:   pdf_craft.ColorDarkBlue,
 				BorderColor: pdf_craft.ColorDarkBlue,
 			})
 

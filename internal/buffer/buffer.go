@@ -9,6 +9,8 @@ import (
 	"github.com/eugene-static/pdf-craft/pkg/unit"
 )
 
+const DefaultSize = 1 << 16
+
 type Buffer struct {
 	content *bytes.Buffer
 }

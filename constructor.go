@@ -2,7 +2,7 @@ package pdf_craft
 
 import (
 	"errors"
-	"fmt"
+	"strconv"
 
 	"github.com/eugene-static/pdf-craft/internal/buffer"
 	"github.com/eugene-static/pdf-craft/internal/font"
@@ -11,20 +11,18 @@ import (
 )
 
 const (
-	blankBlock uint8 = iota
-	defaultBlock
-	repeatableBlock
-)
-
-const (
 	defaultCell uint8 = iota
 	imageCell
 )
 
+func Columns(columns ...unit.MM) []unit.MM {
+	return columns
+}
+
 type Constructor struct {
 	core      *Core
+	paginator *Paginator
 	block     Block
-	watermark Block
 	x0        unit.MM
 	y0        unit.MM
 	x         unit.MM
@@ -63,7 +61,8 @@ func (c *Constructor) Build(applier BlockApplier) *Constructor {
 
 func (c *Constructor) NewPage() {
 	c.render()
-	c.core.renderPage()
+	c.renderPage()
+
 	c.core.newPage()
 
 	c.x, c.y = c.x0, c.y0
@@ -71,11 +70,9 @@ func (c *Constructor) NewPage() {
 
 func (c *Constructor) Render() {
 	c.render()
+	c.renderPage()
 
-	c.core.renderPage()
 	c.core.finishDocument()
-
-	c.reset()
 }
 
 func (c *Constructor) Bytes() ([]byte, error) {
@@ -83,13 +80,13 @@ func (c *Constructor) Bytes() ([]byte, error) {
 }
 
 func (c *Constructor) Block(options ...NodeOptions) *Block {
-	c.newBlock(defaultBlock, options)
+	c.newBlock(options)
 
 	return &c.block
 }
 
 func (c *Constructor) Header(options ...NodeOptions) *Header {
-	c.newBlock(defaultBlock, options)
+	c.newBlock(options)
 
 	x0, y0 := c.core.page.x0y0()
 
@@ -107,22 +104,16 @@ func (c *Constructor) Header(options ...NodeOptions) *Header {
 func (c *Constructor) ReleaseHeader() {
 	c.core.page.releaseHeader()
 
-	_, c.y0 = c.core.page.x0y0()
-}
-
-type Sectioner interface {
-	Section(int) []string
-	Count() int
+	c.y0 = c.core.page.y0()
 }
 
 func (c *Constructor) Repeater(sectioner Sectioner, options ...NodeOptions) *Repeater {
-	c.newBlock(repeatableBlock, options)
-
-	c.block.sectioner = sectioner
-	c.block.sectionsCount = sectioner.Count()
+	c.newBlock(options)
 
 	return &Repeater{
-		block: &c.block,
+		block:      &c.block,
+		sectioner:  sectioner,
+		renderFunc: c.render,
 	}
 }
 
@@ -143,13 +134,45 @@ func (c *Constructor) Watermark(options ...WatermarkOptions) *Watermark {
 	}
 }
 
-func (c *Constructor) newBlock(profile byte, options []NodeOptions) *Block {
+func (c *Constructor) Paginator(offset int) *Paginator {
+	x0 := c.core.page.x0()
+	y0 := c.core.page.yB()
+
+	paginator := &Paginator{
+		block:  &Block{core: c.core},
+		buf:    c.core.page.buffer,
+		x0:     x0,
+		y0:     y0,
+		offset: offset,
+	}
+
+	return paginator
+}
+
+func (c *Constructor) Paginate(offset int) {
+	c.paginator = c.Paginator(offset)
+
+	c.paginator.Slot().Table(1, Columns(5)).Row().Cell("0", CellOptions{TextColor: ColorGray50, ID: 0})
+}
+
+func (c *Constructor) Reset() {
+	c.block.reset()
+
+	c.x0, c.y0 = c.core.page.x0y0()
+	c.x, c.y = c.x0, c.y0
+
+	c.core.releaseBuffers()
+	//c.core.err = nil
+	c.core.startDocument()
+	c.core.newPage()
+}
+
+func (c *Constructor) newBlock(options []NodeOptions) {
 	opts := getOptions(options)
 
 	c.render()
 
-	c.block.profile = profile
-	c.block.reset()
+	c.block.slots = c.block.slots[:0]
 
 	c.block.indentH = opts.IndentH
 	c.block.indentV = opts.IndentV
@@ -157,35 +180,13 @@ func (c *Constructor) newBlock(profile byte, options []NodeOptions) *Block {
 	c.block.spacing = opts.Spacing
 	c.block.border = parseBorder(opts.Border)
 	c.block.borderSize = opts.BorderSize
-
-	return &c.block
 }
 
 func (c *Constructor) render() {
 	c.dy = c.block.height() + c.block.indentV
 
-	switch c.block.profile {
-	case repeatableBlock:
-		c.handleRepeatableBlock()
-	default:
-	}
-
-	c.renderBlock()
-}
-
-func (c *Constructor) handleRepeatableBlock() {
-	for index := range c.block.sectionsCount - 1 {
-		c.renderBlock()
-
-		section := c.block.sectioner.Section(index + 1)
-
-		c.block.modify(section)
-	}
-}
-
-func (c *Constructor) renderBlock() {
 	if c.core.page.isBelowBottomBorder(c.y + c.dy) {
-		c.core.renderPage()
+		c.renderPage()
 		c.core.newPage()
 
 		c.x, c.y = c.x0, c.y0
@@ -196,21 +197,15 @@ func (c *Constructor) renderBlock() {
 	c.y += c.dy
 }
 
-func (c *Constructor) reset() {
-	c.block.reset()
+func (c *Constructor) renderPage() {
+	if c.paginator != nil {
+		c.paginator.render()
+	}
 
-	c.x0, c.y0 = c.core.page.x0y0()
-	c.x, c.y = c.x0, c.y0
-
-	c.core.page.releaseHeader()
-	c.core.page.releaseWatermark()
-	//c.core.err = nil
-	c.core.startDocument()
-	c.core.newPage()
+	c.core.renderPage()
 }
 
 type Block struct {
-	profile       byte
 	core          *Core
 	sectioner     Sectioner
 	sectionsCount int
@@ -266,9 +261,9 @@ func (b *Block) render(buf *buffer.Buffer, x, y unit.MM) {
 	}
 }
 
-func (b *Block) modify(sectioner []string) {
+func (b *Block) modify(section []string) {
 	for i := range b.slots {
-		b.slots[i].modify(sectioner)
+		b.slots[i].modify(section)
 	}
 }
 
@@ -300,10 +295,12 @@ func (b *Block) empty() bool {
 func (b *Block) reset() {
 	b.slots = b.slots[:0]
 
-	if b.profile != repeatableBlock && b.sectionsCount > 0 {
-		b.sectioner = nil
-		b.sectionsCount = 0
-	}
+	b.indentH = 0
+	b.indentV = 0
+	b.ledge = 0
+	b.spacing = 0
+	b.border = 0
+	b.borderSize = 0
 }
 
 type Header struct {
@@ -312,6 +309,10 @@ type Header struct {
 	x0        unit.MM
 	y0        unit.MM
 	setHeight func(h unit.MM)
+}
+
+func (h *Header) Slot(options ...NodeOptions) *Slot {
+	return h.block.Slot(options...)
 }
 
 func (h *Header) Apply(applier BlockApplier) {
@@ -325,20 +326,38 @@ func (h *Header) Apply(applier BlockApplier) {
 }
 
 type Repeater struct {
-	block     *Block
-	sectioner Sectioner
+	block      *Block
+	sectioner  Sectioner
+	renderFunc func()
 }
 
 type RepeaterApplier func(block *Block, section []string)
 
+type Sectioner interface {
+	Section(int) []string
+	Count() int
+}
+
 func (r *Repeater) Repeat(applier RepeaterApplier) {
-	if r.block.sectioner.Count() == 0 {
+	sectionsCount := r.sectioner.Count()
+	if sectionsCount == 0 {
+		r.block.reset()
+
 		return
 	}
 
-	section := r.block.sectioner.Section(0)
+	sectionIndex := 0
+	section := r.sectioner.Section(sectionIndex)
 
 	applier(r.block, section)
+
+	for i := sectionIndex + 1; i < sectionsCount; i++ {
+		r.renderFunc()
+
+		section = r.sectioner.Section(i)
+
+		r.block.modify(section)
+	}
 }
 
 type Watermark struct {
@@ -350,13 +369,21 @@ type Watermark struct {
 	alignV uint8
 }
 
-func (w *Watermark) Apply(applier BlockApplier) {
-	applier(w.block)
+func (w *Watermark) Slot(options ...NodeOptions) *Slot {
+	return w.block.Slot(options...)
+}
 
+func (w *Watermark) Render() {
 	dx := w.dx()
 	dy := w.dy()
 
 	w.block.render(w.buf, w.x0+dx, w.y0+dy)
+}
+
+func (w *Watermark) Apply(applier BlockApplier) {
+	applier(w.block)
+
+	w.Render()
 }
 
 func (w *Watermark) dx() (dx unit.MM) {
@@ -373,18 +400,55 @@ func (w *Watermark) dx() (dx unit.MM) {
 }
 
 func (w *Watermark) dy() (dy unit.MM) {
-	height := w.block.height()
-
 	switch w.alignV {
 	case alignB:
-		dy += w.block.core.page.height - w.block.core.page.marginBottom - height
+		dy = w.block.core.page.height - w.block.core.page.marginTop - w.block.core.page.marginBottom - w.block.height()
 	case alignM:
-		dy += (w.block.core.page.height - w.block.core.page.marginBottom - height) / 2
+		dy = (w.block.core.page.height - w.block.core.page.marginTop - w.block.core.page.marginBottom - w.block.height()) / 2
 	default:
-		dy += 0
+		dy = 0
 	}
 
 	return dy
+}
+
+type Paginator struct {
+	block  *Block
+	buf    *buffer.Buffer
+	x0     unit.MM
+	y0     unit.MM
+	offset int
+	alignH uint8
+}
+
+func (p *Paginator) Slot(options ...NodeOptions) *Slot {
+	return p.block.Slot(options...)
+}
+
+func (p *Paginator) Apply(applier BlockApplier) {
+	applier(p.block)
+}
+
+func (p *Paginator) render() {
+	num := strconv.Itoa(p.block.core.pagesCount + p.offset)
+
+	dx := p.dx()
+
+	p.block.modify([]string{num})
+	p.block.render(p.buf, p.x0+dx, p.y0)
+}
+
+func (p *Paginator) dx() (dx unit.MM) {
+	switch p.alignH {
+	case alignR:
+		dx = p.block.core.page.width - p.block.core.page.marginLeft - p.block.core.page.marginRight - p.block.width()
+	case alignM:
+		dx = (p.block.core.page.width - p.block.core.page.marginLeft - p.block.core.page.marginRight - p.block.width()) / 2
+	default:
+		dx = 0
+	}
+
+	return dx
 }
 
 type Slot struct {
@@ -486,13 +550,13 @@ func (s *Slot) render(buf *buffer.Buffer, x, y unit.MM) {
 	}
 }
 
-func (s *Slot) modify(sectioner []string) {
+func (s *Slot) modify(section []string) {
 	if s.table != nil {
-		s.table.modify(sectioner)
+		s.table.modify(section)
 	}
 
 	for i := range s.blocks {
-		s.blocks[i].modify(sectioner)
+		s.blocks[i].modify(section)
 	}
 }
 
@@ -616,10 +680,6 @@ func (t *Table) render(buf *buffer.Buffer, x, y unit.MM) {
 		ci := i % len(t.columns)
 
 		if t.cellsPool[i].busy {
-			if t.cellsPool[i].image != nil {
-				fmt.Println(t.cellsPool[i].height)
-			}
-
 			t.setCellHeight(ri, i)
 
 			t.cellsPool[i].render(buf, cx, cy, t.textColor, t.borderColor)
@@ -634,7 +694,7 @@ func (t *Table) render(buf *buffer.Buffer, x, y unit.MM) {
 	}
 }
 
-func (t *Table) modify(sectioner []string) {
+func (t *Table) modify(section []string) {
 	for i := range t.cellsPool {
 		ri := i / len(t.columns)
 		ci := i % len(t.columns)
@@ -644,11 +704,11 @@ func (t *Table) modify(sectioner []string) {
 		}
 
 		id := t.cellsPool[i].id
-		if int(id) > len(sectioner)-1 {
+		if int(id) > len(section)-1 {
 			continue
 		}
 
-		t.rows[ri].modifyCell(&t.cellsPool[i], sectioner[id])
+		t.rows[ri].modifyCell(&t.cellsPool[i], section[id])
 	}
 }
 

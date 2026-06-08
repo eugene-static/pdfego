@@ -22,8 +22,8 @@ const (
 	alignC uint8 = 0 + iota
 	alignL
 	alignR
-	alignM = alignL
-	alignT = alignC
+	alignM = alignC
+	alignT = alignL
 	alignB = alignR
 )
 

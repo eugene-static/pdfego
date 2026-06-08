@@ -21,10 +21,6 @@ const (
 	Landscape = "L"
 )
 
-const (
-	bufferSize = 1 << 16
-)
-
 type Core struct {
 	mainBuffer *buffer.Buffer
 	fonts      map[string]*font.Font
@@ -33,7 +29,7 @@ type Core struct {
 	page       page
 	fontSize   unit.PT
 	borderSize unit.PT
-	pagesCount int64
+	pagesCount int
 	offsets    []int
 	pageObjs   []int64
 	compress   bool
@@ -44,7 +40,7 @@ func NewCore(orientation string) *Core {
 	pg := page{
 		width:  unit.PT(595.2).MM(),
 		height: unit.PT(841.89).MM(),
-		buffer: buffer.New(bufferSize),
+		buffer: buffer.New(buffer.DefaultSize),
 	}
 
 	if orientation == Landscape {
@@ -53,14 +49,14 @@ func NewCore(orientation string) *Core {
 
 	offsets := make([]int, 3, 100)
 
-	compBuffer := buffer.New(bufferSize)
+	compBuffer := buffer.New(buffer.DefaultSize)
 	comp := compressor{
 		buffer: compBuffer,
 		writer: zlib.NewWriter(compBuffer),
 	}
 
 	return &Core{
-		mainBuffer: buffer.New(bufferSize),
+		mainBuffer: buffer.New(buffer.DefaultSize),
 		comp:       comp,
 		fonts:      make(map[string]*font.Font),
 		images:     make(map[string]*image.Image),
@@ -165,6 +161,11 @@ func (core *Core) bytes() []byte {
 	return core.mainBuffer.Bytes()
 }
 
+func (core *Core) releaseBuffers() {
+	core.page.releaseHeader()
+	core.page.releaseWatermark()
+}
+
 func (core *Core) font(alias string) *font.Font {
 	if len(core.fonts) == 0 {
 		err := errors.New("нет установленных шрифтов")
@@ -266,7 +267,19 @@ type page struct {
 }
 
 func (p *page) x0y0() (unit.MM, unit.MM) {
-	return p.marginLeft, p.marginTop - p.height
+	return p.x0(), p.y0()
+}
+
+func (p *page) x0() unit.MM {
+	return p.marginLeft
+}
+
+func (p *page) y0() unit.MM {
+	return p.marginTop - p.height
+}
+
+func (p *page) yB() unit.MM {
+	return -p.marginBottom
 }
 
 func (p *page) isBelowBottomBorder(y unit.MM) bool {
@@ -280,7 +293,7 @@ func (p *page) newHeader() *buffer.Buffer {
 		return p.headerBuffer
 	}
 
-	buf := buffer.New(bufferSize)
+	buf := buffer.New(buffer.DefaultSize)
 
 	p.headerBuffer = buf
 
@@ -300,7 +313,7 @@ func (p *page) newWatermark() *buffer.Buffer {
 		return p.watermarkBuffer
 	}
 
-	buf := buffer.New(bufferSize)
+	buf := buffer.New(buffer.DefaultSize)
 
 	p.watermarkBuffer = buf
 
