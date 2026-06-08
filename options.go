@@ -19,51 +19,13 @@ const (
 )
 
 const (
-	alignL uint8 = 0 + iota
-	alignC
+	alignC uint8 = 0 + iota
+	alignL
 	alignR
-	alignT = alignL
-	alignM = alignC
+	alignM = alignL
+	alignT = alignC
 	alignB = alignR
 )
-
-type Color struct {
-	r, g, b uint8
-}
-
-var (
-	Black   = Color{0, 0, 0}
-	White   = Color{255, 255, 255}
-	Red     = Color{255, 0, 0}
-	Green   = Color{0, 255, 0}
-	Blue    = Color{0, 0, 255}
-	Yellow  = Color{0, 255, 255}
-	Cyan    = Color{255, 0, 255}
-	Magenta = Color{255, 255, 0}
-)
-
-// NewColor инициализирует новый цвет Color
-//
-//	red, green, blue в диапазоне от 0 до 255.
-func NewColor(r, g, b uint8) Color {
-	return Color{r, g, b}
-}
-
-func NewColorFromHex(hex string) (Color, error) {
-	return Black, nil
-}
-
-func (c *Color) RGB() (r float64, g float64, b float64) {
-	return float64(c.r) / 255, float64(c.g) / 255, float64(c.b) / 255
-}
-
-func (c *Color) Equal(other Color) bool {
-	return c.r == other.r && c.g == other.g && c.b == other.b
-}
-
-func (c *Color) isBlack() bool {
-	return c.r == 0 && c.g == 0 && c.b == 0
-}
 
 type NodeOptions struct {
 	Border     string
@@ -79,13 +41,14 @@ type WatermarkOptions struct {
 }
 
 type TableOptions struct {
-	Color      Color
-	Border     string
-	BorderSize unit.PT
-	IndentH    unit.MM
-	IndentV    unit.MM
-	SpacingH   unit.MM
-	SpacingV   unit.MM
+	TextColor   Color
+	BorderColor Color
+	Border      string
+	BorderSize  unit.PT
+	IndentH     unit.MM
+	IndentV     unit.MM
+	SpacingH    unit.MM
+	SpacingV    unit.MM
 }
 
 type RowOptions struct {
@@ -106,12 +69,18 @@ type CellOptions struct {
 	Height      unit.MM
 	BorderSize  unit.PT
 	FontSize    unit.PT
-	Color       Color
+	TextColor   Color
+	BorderColor Color
 	Wrap        bool
 }
 
-func getOptions[T CellOptions | NodeOptions | TableOptions | RowOptions | WatermarkOptions](opts []T) T {
+type options interface {
+	CellOptions | NodeOptions | TableOptions | RowOptions | WatermarkOptions
+}
+
+func getOptions[T options](opts []T) T {
 	var opt T
+
 	if len(opts) > 0 {
 		opt = opts[0]
 	}

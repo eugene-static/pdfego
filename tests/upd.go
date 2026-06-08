@@ -1,11 +1,11 @@
-package upd
+package tests
 
 import (
 	"slices"
 	"time"
 )
 
-type UPD struct {
+type DTO struct {
 	Status string
 	SfNum  string
 	SfDate string
@@ -70,7 +70,7 @@ type Detail struct {
 	Gtd              string
 }
 
-func NewUPD(detailsNum int) UPD {
+func NewDTO(detailsNum int) DTO {
 	details := []Detail{
 		{
 			Number:           "1",
@@ -126,47 +126,11 @@ func NewUPD(detailsNum int) UPD {
 			CountryName:      "--",
 			Gtd:              "--",
 		},
-		//{
-		//	Number:           "4",
-		//	Code:             "1732",
-		//	Title:            "РЗШ.Штраф: поставка № 26532296 объемом 5000 штук, запланированная на 2025-02-10, была привезена в объеме 180 штук. РЗШ.Штраф: поставка № 26532296 объемом 5000 штук, запланированная на 2025-02-10, была привезена в объеме 180 штук.",
-		//	KindID:           "",
-		//	OkeiID:           "--",
-		//	OkeiCode:         "--",
-		//	Quantity:         "1",
-		//	Price:            "100,00",
-		//	AmountWithoutVat: "100,00",
-		//	Excise:           "без акциза",
-		//	Vat:              "22%",
-		//	AmountVat:        "22,00",
-		//	AmountWithVat:    "122,00",
-		//	CountryID:        "--",
-		//	CountryName:      "--",
-		//	Gtd:              "--",
-		//},
-		//{
-		//	Number:           "5",
-		//	Code:             "1732",
-		//	Title:            "РЗШ.Штраф: поставка № 26532296 объемом 5000 штук, запланированная на 2025-02-10, была привезена в объеме 180 штук. РЗШ.Штраф: поставка № 26532296 объемом 5000 штук, запланированная на 2025-02-10, была привезена в объеме 180 штук.",
-		//	KindID:           "",
-		//	OkeiID:           "--",
-		//	OkeiCode:         "--",
-		//	Quantity:         "1",
-		//	Price:            "100,00",
-		//	AmountWithoutVat: "100,00",
-		//	Excise:           "без акциза",
-		//	Vat:              "22%",
-		//	AmountVat:        "22,00",
-		//	AmountWithVat:    "122,00",
-		//	CountryID:        "--",
-		//	CountryName:      "--",
-		//	Gtd:              "--",
-		//},
 	}
 
 	details = slices.Repeat(details, detailsNum)
 
-	upd := UPD{
+	upd := DTO{
 		Status:                       "1",
 		SfNum:                        "1234567890",
 		SfDate:                       time.Now().Format("02.01.2006"),
@@ -206,27 +170,27 @@ func NewUPD(detailsNum int) UPD {
 	return upd
 }
 
-func (upd UPD) OrderedRow(index int) []string {
-	upd.DetailsOrdered[0] = upd.Details[index].Code
-	upd.DetailsOrdered[1] = upd.Details[index].Number
-	upd.DetailsOrdered[2] = upd.Details[index].Title
-	upd.DetailsOrdered[3] = upd.Details[index].KindID
-	upd.DetailsOrdered[4] = upd.Details[index].OkeiID
-	upd.DetailsOrdered[5] = upd.Details[index].OkeiCode
-	upd.DetailsOrdered[6] = upd.Details[index].Quantity
-	upd.DetailsOrdered[7] = upd.Details[index].Price
-	upd.DetailsOrdered[8] = upd.Details[index].AmountWithoutVat
-	upd.DetailsOrdered[9] = upd.Details[index].Excise
-	upd.DetailsOrdered[10] = upd.Details[index].Vat
-	upd.DetailsOrdered[11] = upd.Details[index].AmountVat
-	upd.DetailsOrdered[12] = upd.Details[index].AmountWithVat
-	upd.DetailsOrdered[13] = upd.Details[index].CountryID
-	upd.DetailsOrdered[14] = upd.Details[index].CountryName
-	upd.DetailsOrdered[15] = upd.Details[index].Gtd
+func (dto DTO) Section(index int) []string {
+	dto.DetailsOrdered[0] = dto.Details[index].Code
+	dto.DetailsOrdered[1] = dto.Details[index].Number
+	dto.DetailsOrdered[2] = dto.Details[index].Title
+	dto.DetailsOrdered[3] = dto.Details[index].KindID
+	dto.DetailsOrdered[4] = dto.Details[index].OkeiID
+	dto.DetailsOrdered[5] = dto.Details[index].OkeiCode
+	dto.DetailsOrdered[6] = dto.Details[index].Quantity
+	dto.DetailsOrdered[7] = dto.Details[index].Price
+	dto.DetailsOrdered[8] = dto.Details[index].AmountWithoutVat
+	dto.DetailsOrdered[9] = dto.Details[index].Excise
+	dto.DetailsOrdered[10] = dto.Details[index].Vat
+	dto.DetailsOrdered[11] = dto.Details[index].AmountVat
+	dto.DetailsOrdered[12] = dto.Details[index].AmountWithVat
+	dto.DetailsOrdered[13] = dto.Details[index].CountryID
+	dto.DetailsOrdered[14] = dto.Details[index].CountryName
+	dto.DetailsOrdered[15] = dto.Details[index].Gtd
 
-	return upd.DetailsOrdered
+	return dto.DetailsOrdered
 }
 
-func (upd UPD) Len() int {
-	return len(upd.Details)
+func (dto DTO) Count() int {
+	return len(dto.Details)
 }

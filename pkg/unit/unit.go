@@ -15,6 +15,8 @@ type MM float64
 
 type PT float64
 
+type PX float64
+
 func (pt PT) MM() MM {
 	return MM(pt / (dpi / inch))
 }

@@ -69,14 +69,14 @@ func (b *Buffer) WriteStringLn(val string) {
 	b.ln()
 }
 
-// /REG 14 Tf
+// /$Alias $Size Tf
 func (b *Buffer) WriteFont(alias string, fontSize unit.PT) {
 	b.writeString("/", alias, " ")
 	b.writeFloat64(fontSize.Float64())
 	b.writeString(" Tf\n")
 }
 
-// "1 0 0 1 x y Tm" задает абсолютную позицию текста на странице.
+// 1 0 0 1 $X $Y Tm <$HEX1$HEX2...$HEXN> Tj
 func (b *Buffer) WriteText(font *font.Font, x, y unit.MM, text string) {
 	b.content.WriteString("1 0 0 1 ")
 	b.writeXY(x, y)
@@ -90,14 +90,18 @@ func (b *Buffer) WriteText(font *font.Font, x, y unit.MM, text string) {
 	b.content.WriteString("> Tj\n")
 }
 
-// r g b rg
-func (b *Buffer) WriteColor(red, green, blue float64) {
+// $R $G $B rg
+func (b *Buffer) WriteTextColor(red, green, blue float64) {
 	b.writeFloat64(red)
 	b.space()
 	b.writeFloat64(green)
 	b.space()
 	b.writeFloat64(blue)
 	b.WriteStringLn(" rg")
+}
+
+// $R $G $B RG
+func (b *Buffer) WriteBorderColor(red, green, blue float64) {
 	b.writeFloat64(red)
 	b.space()
 	b.writeFloat64(green)
@@ -106,7 +110,7 @@ func (b *Buffer) WriteColor(red, green, blue float64) {
 	b.WriteStringLn(" RG")
 }
 
-// q [W] 0 0 [H] [X] [Y] cm /[ImageAlias] Do Q
+// q $W 0 0 $H $X $Y cm /$ImageAlias Do Q
 func (b *Buffer) WriteImage(x, y, w, h unit.MM, alias string) {
 	b.content.WriteString("q ")
 	b.writeFloat64(w.PT().Float64())
@@ -164,7 +168,7 @@ func (b *Buffer) WriteGlyphCharDictionary(glyphs []font.Glyph) {
 	}
 }
 
-// StartObj writes "1 0 obj" to buffer.
+// $N 0 obj
 func (b *Buffer) StartObj(objNum int64) {
 	b.writeInt64(objNum)
 	b.content.WriteString(" 0 obj\n")
@@ -195,7 +199,7 @@ func (b *Buffer) EndStream() {
 	b.content.WriteString("\nendstream\n")
 }
 
-// /Parent 1 0 R
+// /$Parent $N 0 R
 func (b *Buffer) WriteRef(field string, objNum int64) {
 	b.writeString(field)
 	b.space()
@@ -203,7 +207,7 @@ func (b *Buffer) WriteRef(field string, objNum int64) {
 	b.writeString(" 0 R\n")
 }
 
-// /Kids [2 0 R 3 0 R]
+// /Kids [$N1 0 R $N2 0 R]
 func (b *Buffer) WriteRefArray(field string, objNums []int64) {
 	b.writeString(field, " [")
 
@@ -218,6 +222,7 @@ func (b *Buffer) WriteRefArray(field string, objNums []int64) {
 	b.writeString("]\n")
 }
 
+// 6500 00000 n
 func (b *Buffer) WriteXref(ref int) {
 	b.writeInt64D10(int64(ref))
 	b.writeString(" 00000 n\r\n")
@@ -267,7 +272,7 @@ func (b *Buffer) WriteFieldFloatArray(field string, arr []float64) {
 	b.writeString("]\n")
 }
 
-// 1 w x0 y0 m x1 y1 l S
+// $Size w $X0 $Y0 m $X1 $Y1 l S
 func (b *Buffer) WriteLine(bw unit.PT, x0, y0, x1, y1 unit.MM) {
 	b.writeFloat64(bw.Float64())
 	b.writeString(" w ")
@@ -277,7 +282,7 @@ func (b *Buffer) WriteLine(bw unit.PT, x0, y0, x1, y1 unit.MM) {
 	b.writeString(" l S\n")
 }
 
-// 1 w x0 y0 w h re S
+// $Size w $X0 $Y0 $W $H re S
 func (b *Buffer) WriteRect(bw unit.PT, x, y, w, h unit.MM) {
 	b.writeFloat64(bw.Float64())
 	b.writeString(" w ")

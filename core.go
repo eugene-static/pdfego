@@ -2,6 +2,7 @@ package pdf_craft
 
 import (
 	"compress/zlib"
+	"errors"
 	"fmt"
 	"os"
 
@@ -18,11 +19,6 @@ const (
 
 	Portrait  = "P"
 	Landscape = "L"
-)
-
-var (
-	ColorBlue = font.Blue
-	ColorRed  = font.Red
 )
 
 const (
@@ -170,6 +166,14 @@ func (core *Core) bytes() []byte {
 }
 
 func (core *Core) font(alias string) *font.Font {
+	if len(core.fonts) == 0 {
+		err := errors.New("нет установленных шрифтов")
+
+		core.writeError(err)
+
+		return nil
+	}
+
 	fnt, ok := core.fonts[alias]
 	if !ok {
 		err := fmt.Errorf("не найден шрифт с таким именем: %s", alias)
@@ -283,8 +287,10 @@ func (p *page) newHeader() *buffer.Buffer {
 	return buf
 }
 
-func (p *page) removeHeader() {
-	p.headerBuffer.Reset()
+func (p *page) releaseHeader() {
+	if p.headerBuffer != nil {
+		p.headerBuffer.Reset()
+	}
 }
 
 func (p *page) newWatermark() *buffer.Buffer {
@@ -299,6 +305,12 @@ func (p *page) newWatermark() *buffer.Buffer {
 	p.watermarkBuffer = buf
 
 	return buf
+}
+
+func (p *page) releaseWatermark() {
+	if p.watermarkBuffer != nil {
+		p.watermarkBuffer.Reset()
+	}
 }
 
 type compressor struct {

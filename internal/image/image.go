@@ -29,11 +29,14 @@ func New(alias string, data []byte) (*Image, error) {
 	pixCount := width * height
 
 	nrgba := image.NewRGBA(bounds)
+
 	for y := range height {
 		for x := range width {
 			r, g, b, a := img.At(x+bounds.Min.X, y+bounds.Min.Y).RGBA()
+
 			// RGBA() возвращает значения в диапазоне [0, 65535], сужаем до 8 бит
 			off := nrgba.PixOffset(x, y)
+
 			nrgba.Pix[off+0] = uint8(r >> 8)
 			nrgba.Pix[off+1] = uint8(g >> 8)
 			nrgba.Pix[off+2] = uint8(b >> 8)
@@ -49,15 +52,19 @@ func New(alias string, data []byte) (*Image, error) {
 		}
 	}
 
-	rgb := make([]byte, pixCount*3)
 	var alpha []byte
+
 	if hasAlpha {
 		alpha = make([]byte, pixCount)
 	}
 
+	rgb := make([]byte, pixCount*3)
+
 	for i := range pixCount {
 		off := i * 4
+
 		copy(rgb[i*3:], nrgba.Pix[off:off+3])
+
 		if hasAlpha {
 			alpha[i] = nrgba.Pix[off+3]
 		}

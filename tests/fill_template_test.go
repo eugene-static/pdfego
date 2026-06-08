@@ -1,4 +1,4 @@
-package upd
+package tests
 
 import (
 	"os"
@@ -8,7 +8,7 @@ import (
 )
 
 func BenchmarkUPD_FillTemplate(b *testing.B) {
-	upd := NewUPD(3333)
+	upd := NewDTO(3333)
 
 	template, err := prepareTemplate()
 
@@ -26,7 +26,7 @@ func BenchmarkUPD_FillTemplate(b *testing.B) {
 }
 
 func TestUPD_FillTemplate(t *testing.T) {
-	upd := NewUPD(10)
+	upd := NewDTO(1)
 
 	template, err := prepareTemplate()
 	if err != nil {

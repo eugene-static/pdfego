@@ -13,8 +13,6 @@ import (
 const (
 	blankBlock uint8 = iota
 	defaultBlock
-	headerBlock
-	headerStopBlock
 	repeatableBlock
 )
 
@@ -27,11 +25,12 @@ type Constructor struct {
 	core      *Core
 	block     Block
 	watermark Block
-	height    unit.MM
 	x0        unit.MM
 	y0        unit.MM
 	x         unit.MM
 	y         unit.MM
+	dx        unit.MM
+	dy        unit.MM
 }
 
 func New(core *Core) *Constructor {
@@ -53,17 +52,17 @@ func New(core *Core) *Constructor {
 	}
 }
 
-func (c *Constructor) Fill(filler BlockFiller) *Constructor {
+func (c *Constructor) Build(applier BlockApplier) *Constructor {
 	c.render()
 
 	c.block.slots = c.block.slots[:0]
-	filler(&c.block)
+	applier(&c.block)
 
 	return c
 }
 
 func (c *Constructor) NewPage() {
-	c.newBlock(blankBlock, nil)
+	c.render()
 	c.core.renderPage()
 	c.core.newPage()
 
@@ -72,42 +71,55 @@ func (c *Constructor) NewPage() {
 
 func (c *Constructor) Render() {
 	c.render()
+
 	c.core.renderPage()
 	c.core.finishDocument()
-}
 
-type Ordered interface {
-	Len() int
-	OrderedRow(int) []string
+	c.reset()
 }
 
 func (c *Constructor) Bytes() ([]byte, error) {
 	return c.core.bytes(), c.core.err()
 }
 
-func (c *Constructor) Block(opts ...NodeOptions) *Block {
-	c.newBlock(defaultBlock, opts)
+func (c *Constructor) Block(options ...NodeOptions) *Block {
+	c.newBlock(defaultBlock, options)
 
 	return &c.block
 }
 
-func (c *Constructor) Header(opts ...NodeOptions) *Block {
-	c.newBlock(headerBlock, opts)
+func (c *Constructor) Header(options ...NodeOptions) *Header {
+	c.newBlock(defaultBlock, options)
 
-	return &c.block
+	x0, y0 := c.core.page.x0y0()
+
+	return &Header{
+		block: &c.block,
+		buf:   c.core.page.newHeader(),
+		x0:    x0,
+		y0:    y0,
+		setHeight: func(height unit.MM) {
+			c.y0 += height
+		},
+	}
 }
 
-func (c *Constructor) EndHeader(opts ...NodeOptions) *Block {
-	c.newBlock(headerStopBlock, opts)
+func (c *Constructor) ReleaseHeader() {
+	c.core.page.releaseHeader()
 
-	return &c.block
+	_, c.y0 = c.core.page.x0y0()
 }
 
-func (c *Constructor) Repeater(ordered Ordered, opts ...NodeOptions) *Repeater {
-	c.newBlock(repeatableBlock, opts)
+type Sectioner interface {
+	Section(int) []string
+	Count() int
+}
 
-	c.block.ordered = ordered
-	c.block.orderedLength = ordered.Len()
+func (c *Constructor) Repeater(sectioner Sectioner, options ...NodeOptions) *Repeater {
+	c.newBlock(repeatableBlock, options)
+
+	c.block.sectioner = sectioner
+	c.block.sectionsCount = sectioner.Count()
 
 	return &Repeater{
 		block: &c.block,
@@ -117,42 +129,42 @@ func (c *Constructor) Repeater(ordered Ordered, opts ...NodeOptions) *Repeater {
 func (c *Constructor) Watermark(options ...WatermarkOptions) *Watermark {
 	opts := getOptions(options)
 	alignH, alignV := parseAlignment(opts.Align)
+	x0, y0 := c.core.page.x0y0()
 
 	return &Watermark{
 		block: &Block{
 			core: c.core,
 		},
+		buf:    c.core.page.newWatermark(),
+		x0:     x0,
+		y0:     y0,
 		alignH: alignH,
 		alignV: alignV,
 	}
 }
 
-func (c *Constructor) newBlock(profile byte, opts []NodeOptions) *Block {
-	options := getOptions(opts)
+func (c *Constructor) newBlock(profile byte, options []NodeOptions) *Block {
+	opts := getOptions(options)
 
 	c.render()
 
 	c.block.profile = profile
 	c.block.reset()
 
-	c.block.indentH = options.IndentH
-	c.block.indentV = options.IndentV
-	c.block.ledge = options.Ledge
-	c.block.spacing = options.Spacing
-	c.block.border = parseBorder(options.Border)
-	c.block.borderSize = options.BorderSize
+	c.block.indentH = opts.IndentH
+	c.block.indentV = opts.IndentV
+	c.block.ledge = opts.Ledge
+	c.block.spacing = opts.Spacing
+	c.block.border = parseBorder(opts.Border)
+	c.block.borderSize = opts.BorderSize
 
 	return &c.block
 }
 
 func (c *Constructor) render() {
-	c.height = c.block.height() + c.block.indentV
+	c.dy = c.block.height() + c.block.indentV
 
 	switch c.block.profile {
-	case headerBlock:
-		c.handleHeaderBlock()
-	case headerStopBlock:
-		c.handleHeaderStopBlock()
 	case repeatableBlock:
 		c.handleRepeatableBlock()
 	default:
@@ -161,31 +173,18 @@ func (c *Constructor) render() {
 	c.renderBlock()
 }
 
-func (c *Constructor) handleHeaderBlock() {
-	header := c.core.page.newHeader()
-
-	c.block.render(header, c.x0, c.y0)
-	c.y0 += c.height
-}
-
-func (c *Constructor) handleHeaderStopBlock() {
-	c.core.page.removeHeader()
-
-	_, c.y0 = c.core.page.x0y0()
-}
-
 func (c *Constructor) handleRepeatableBlock() {
-	for index := range c.block.orderedLength - 1 {
+	for index := range c.block.sectionsCount - 1 {
 		c.renderBlock()
 
-		ordered := c.block.ordered.OrderedRow(index + 1)
+		section := c.block.sectioner.Section(index + 1)
 
-		c.block.update(ordered)
+		c.block.modify(section)
 	}
 }
 
 func (c *Constructor) renderBlock() {
-	if c.core.page.isBelowBottomBorder(c.y + c.height) {
+	if c.core.page.isBelowBottomBorder(c.y + c.dy) {
 		c.core.renderPage()
 		c.core.newPage()
 
@@ -194,14 +193,27 @@ func (c *Constructor) renderBlock() {
 
 	c.block.render(c.core.page.buffer, c.x, c.y)
 
-	c.y += c.height
+	c.y += c.dy
+}
+
+func (c *Constructor) reset() {
+	c.block.reset()
+
+	c.x0, c.y0 = c.core.page.x0y0()
+	c.x, c.y = c.x0, c.y0
+
+	c.core.page.releaseHeader()
+	c.core.page.releaseWatermark()
+	//c.core.err = nil
+	c.core.startDocument()
+	c.core.newPage()
 }
 
 type Block struct {
 	profile       byte
 	core          *Core
-	ordered       Ordered
-	orderedLength int
+	sectioner     Sectioner
+	sectionsCount int
 	slots         []Slot
 	indentH       unit.MM
 	indentV       unit.MM
@@ -211,19 +223,19 @@ type Block struct {
 	borderSize    unit.PT
 }
 
-type BlockFiller func(*Block)
+type BlockApplier func(block *Block)
 
-func (b *Block) Slot(opts ...NodeOptions) *Slot {
-	options := getOptions(opts)
+func (b *Block) Slot(options ...NodeOptions) *Slot {
+	opts := getOptions(options)
 
 	s := Slot{
 		core:       b.core,
-		indentH:    options.IndentH,
-		indentV:    options.IndentV,
-		spacing:    options.Spacing,
-		ledge:      options.Ledge,
-		borderSize: options.BorderSize,
-		border:     parseBorder(options.Border),
+		indentH:    opts.IndentH,
+		indentV:    opts.IndentV,
+		spacing:    opts.Spacing,
+		ledge:      opts.Ledge,
+		borderSize: opts.BorderSize,
+		border:     parseBorder(opts.Border),
 	}
 
 	b.slots = append(b.slots, s)
@@ -231,8 +243,8 @@ func (b *Block) Slot(opts ...NodeOptions) *Slot {
 	return &b.slots[len(b.slots)-1]
 }
 
-func (b *Block) Fill(filler BlockFiller) {
-	filler(b)
+func (b *Block) Apply(applier BlockApplier) {
+	applier(b)
 }
 
 func (b *Block) render(buf *buffer.Buffer, x, y unit.MM) {
@@ -254,9 +266,9 @@ func (b *Block) render(buf *buffer.Buffer, x, y unit.MM) {
 	}
 }
 
-func (b *Block) update(ordered []string) {
+func (b *Block) modify(sectioner []string) {
 	for i := range b.slots {
-		b.slots[i].update(ordered)
+		b.slots[i].modify(sectioner)
 	}
 }
 
@@ -288,45 +300,63 @@ func (b *Block) empty() bool {
 func (b *Block) reset() {
 	b.slots = b.slots[:0]
 
-	if b.profile != repeatableBlock && b.orderedLength > 0 {
-		b.ordered = nil
-		b.orderedLength = 0
+	if b.profile != repeatableBlock && b.sectionsCount > 0 {
+		b.sectioner = nil
+		b.sectionsCount = 0
 	}
+}
+
+type Header struct {
+	block     *Block
+	buf       *buffer.Buffer
+	x0        unit.MM
+	y0        unit.MM
+	setHeight func(h unit.MM)
+}
+
+func (h *Header) Apply(applier BlockApplier) {
+	applier(h.block)
+
+	height := h.block.height()
+
+	h.setHeight(height)
+
+	h.block.render(h.buf, h.x0, h.y0)
 }
 
 type Repeater struct {
-	block *Block
+	block     *Block
+	sectioner Sectioner
 }
 
-type RepeaterFiller func(*Block, []string)
+type RepeaterApplier func(block *Block, section []string)
 
-func (r *Repeater) Repeat(filler RepeaterFiller) {
-	if r.block.ordered.Len() == 0 {
+func (r *Repeater) Repeat(applier RepeaterApplier) {
+	if r.block.sectioner.Count() == 0 {
 		return
 	}
 
-	ordered := r.block.ordered.OrderedRow(0)
+	section := r.block.sectioner.Section(0)
 
-	filler(r.block, ordered)
+	applier(r.block, section)
 }
 
 type Watermark struct {
 	block  *Block
+	buf    *buffer.Buffer
+	x0     unit.MM
+	y0     unit.MM
 	alignH uint8
 	alignV uint8
 }
 
-func (w *Watermark) Fill(filler BlockFiller) {
-	filler(w.block)
-
-	buf := w.block.core.page.newWatermark()
-
-	x, y := w.block.core.page.x0y0()
+func (w *Watermark) Apply(applier BlockApplier) {
+	applier(w.block)
 
 	dx := w.dx()
 	dy := w.dy()
 
-	w.block.render(buf, x+dx, y+dy)
+	w.block.render(w.buf, w.x0+dx, w.y0+dy)
 }
 
 func (w *Watermark) dx() (dx unit.MM) {
@@ -344,7 +374,6 @@ func (w *Watermark) dx() (dx unit.MM) {
 
 func (w *Watermark) dy() (dy unit.MM) {
 	height := w.block.height()
-	//dy = height
 
 	switch w.alignV {
 	case alignB:
@@ -370,24 +399,24 @@ type Slot struct {
 	borderSize unit.PT
 }
 
-type SlotFiller func(*Slot)
+type SlotApplier func(slot *Slot)
 
-func (s *Slot) Block(opts ...NodeOptions) *Block {
+func (s *Slot) Block(options ...NodeOptions) *Block {
 	if s.table != nil {
 		err := errors.New("слот уже содержит таблицу")
 		s.core.writeError(err)
 	}
 
-	options := getOptions(opts)
+	opts := getOptions(options)
 
 	b := Block{
 		core:       s.core,
-		indentH:    options.IndentH,
-		indentV:    options.IndentV,
-		ledge:      options.Ledge,
-		spacing:    options.Spacing,
-		border:     parseBorder(options.Border),
-		borderSize: options.BorderSize,
+		indentH:    opts.IndentH,
+		indentV:    opts.IndentV,
+		ledge:      opts.Ledge,
+		spacing:    opts.Spacing,
+		border:     parseBorder(opts.Border),
+		borderSize: opts.BorderSize,
 	}
 
 	s.blocks = append(s.blocks, b)
@@ -395,29 +424,30 @@ func (s *Slot) Block(opts ...NodeOptions) *Block {
 	return &s.blocks[len(s.blocks)-1]
 }
 
-func (s *Slot) Table(rowsNum int, columns []unit.MM, opts ...TableOptions) *Table {
+func (s *Slot) Table(rowsNum int, columns []unit.MM, options ...TableOptions) *Table {
 	if len(s.blocks) > 0 {
 		err := errors.New("слот уже содержит блоки")
 		s.core.writeError(err)
 	}
 
-	options := getOptions(opts)
+	opts := getOptions(options)
 
 	columnsNum := len(columns)
 
 	t := &Table{
-		core:       s.core,
-		columns:    columns,
-		rows:       make([]Row, rowsNum),
-		rowspans:   make([]uint8, columnsNum),
-		cellsPool:  make([]cell, rowsNum*columnsNum),
-		color:      options.Color,
-		border:     parseBorder(options.Border),
-		borderSize: options.BorderSize,
-		indentH:    options.IndentH,
-		indentV:    options.IndentV,
-		spacingH:   options.SpacingH,
-		spacingV:   options.SpacingV,
+		core:        s.core,
+		columns:     columns,
+		rows:        make([]Row, rowsNum),
+		rowspans:    make([]uint8, columnsNum),
+		cellsPool:   make([]cell, rowsNum*columnsNum),
+		textColor:   opts.TextColor,
+		borderColor: opts.BorderColor,
+		border:      parseBorder(opts.Border),
+		borderSize:  opts.BorderSize,
+		indentH:     opts.IndentH,
+		indentV:     opts.IndentV,
+		spacingH:    opts.SpacingH,
+		spacingV:    opts.SpacingV,
 	}
 
 	s.table = t
@@ -425,8 +455,8 @@ func (s *Slot) Table(rowsNum int, columns []unit.MM, opts ...TableOptions) *Tabl
 	return t
 }
 
-func (s *Slot) Fill(filler SlotFiller) *Slot {
-	filler(s)
+func (s *Slot) Apply(applier SlotApplier) *Slot {
+	applier(s)
 
 	return s
 }
@@ -456,13 +486,13 @@ func (s *Slot) render(buf *buffer.Buffer, x, y unit.MM) {
 	}
 }
 
-func (s *Slot) update(ordered []string) {
+func (s *Slot) modify(sectioner []string) {
 	if s.table != nil {
-		s.table.update(ordered)
+		s.table.modify(sectioner)
 	}
 
 	for i := range s.blocks {
-		s.blocks[i].update(ordered)
+		s.blocks[i].modify(sectioner)
 	}
 }
 
@@ -502,39 +532,40 @@ func (s *Slot) width() (w unit.MM) {
 }
 
 type Table struct {
-	core       *Core
-	columns    []unit.MM
-	rows       []Row
-	cellsPool  []cell
-	rowspans   []uint8
-	rowIndex   uint8
-	color      Color
-	border     uint8
-	borderSize unit.PT
-	indentH    unit.MM
-	indentV    unit.MM
-	spacingH   unit.MM
-	spacingV   unit.MM
+	core        *Core
+	columns     []unit.MM
+	rows        []Row
+	cellsPool   []cell
+	rowspans    []uint8
+	rowIndex    uint8
+	textColor   Color
+	borderColor Color
+	border      uint8
+	borderSize  unit.PT
+	indentH     unit.MM
+	indentV     unit.MM
+	spacingH    unit.MM
+	spacingV    unit.MM
 }
 
-type TableFiller func(*Table)
+type TableApplier func(*Table)
 
-func (t *Table) Row(opts ...RowOptions) *Row {
-	options := getOptions(opts)
+func (t *Table) Row(options ...RowOptions) *Row {
+	opts := getOptions(options)
 
 	t.setRowIndex()
 
 	r := &t.rows[t.rowIndex]
 
 	t.decrementRowSpans()
-	t.newRow(r, options)
+	t.newRow(r, opts)
 	t.updateIndexes()
 
 	return r
 }
 
-func (t *Table) Fill(filler TableFiller) {
-	filler(t)
+func (t *Table) Apply(applier TableApplier) {
+	applier(t)
 }
 
 func (t *Table) newRow(row *Row, options RowOptions) {
@@ -552,15 +583,24 @@ func (t *Table) newRow(row *Row, options RowOptions) {
 }
 
 func (t *Table) render(buf *buffer.Buffer, x, y unit.MM) {
+	if t.core.err() != nil {
+		return
+	}
+
 	x += t.indentH
 	y += t.indentV
 
-	if !t.color.isBlack() {
-		buf.WriteColor(t.color.RGB())
-		defer buf.WriteColor(Black.RGB())
+	if !t.textColor.isDefault() {
+		buf.WriteTextColor(t.textColor.RGB())
+		defer buf.WriteTextColor(ColorDefault.RGB())
 	}
 
 	if t.border > 0 {
+		if !t.borderColor.isDefault() {
+			buf.WriteBorderColor(t.borderColor.RGB())
+			defer buf.WriteBorderColor(ColorDefault.RGB())
+		}
+
 		width := t.width()
 		height := t.height()
 		borderSize := coalesce(t.borderSize, t.core.DefaultBorderSize())
@@ -582,7 +622,7 @@ func (t *Table) render(buf *buffer.Buffer, x, y unit.MM) {
 
 			t.setCellHeight(ri, i)
 
-			t.cellsPool[i].render(buf, cx, cy, t.color)
+			t.cellsPool[i].render(buf, cx, cy, t.textColor, t.borderColor)
 		}
 
 		cx += t.columns[ci] + t.spacingH
@@ -594,7 +634,7 @@ func (t *Table) render(buf *buffer.Buffer, x, y unit.MM) {
 	}
 }
 
-func (t *Table) update(ordered []string) {
+func (t *Table) modify(sectioner []string) {
 	for i := range t.cellsPool {
 		ri := i / len(t.columns)
 		ci := i % len(t.columns)
@@ -604,11 +644,11 @@ func (t *Table) update(ordered []string) {
 		}
 
 		id := t.cellsPool[i].id
-		if int(id) > len(ordered)-1 {
+		if int(id) > len(sectioner)-1 {
 			continue
 		}
 
-		t.rows[ri].updateCell(&t.cellsPool[i], ordered[id])
+		t.rows[ri].modifyCell(&t.cellsPool[i], sectioner[id])
 	}
 }
 
@@ -821,10 +861,10 @@ func (r *Row) Skip() *Row {
 	return r
 }
 
-func (r *Row) Image(alias string, opts ...CellOptions) *Row {
-	options := getOptions(opts)
+func (r *Row) Image(alias string, options ...CellOptions) *Row {
+	opts := getOptions(options)
 
-	r.newCell(alias, imageCell, options)
+	r.newCell(alias, imageCell, opts)
 
 	return r
 }
@@ -839,8 +879,9 @@ func (r *Row) newCell(text string, profile uint8, options CellOptions) {
 	c.static = options.Height > 0
 	c.offsetH = options.OffsetH
 	c.offsetV = options.OffsetV
-	c.color = options.Color
-	c.borderMask = parseBorder(options.Border)
+	c.textColor = options.TextColor
+	c.borderColor = options.BorderColor
+	c.border = parseBorder(options.Border)
 	c.borderSize = coalesce(options.BorderSize, r.core.DefaultBorderSize())
 	c.colspan = coalesce(options.Colspan, 1)
 	c.rowspan = coalesce(options.Rowspan, 1)
@@ -867,7 +908,7 @@ func (r *Row) newCell(text string, profile uint8, options CellOptions) {
 	r.updateIndexes(c)
 }
 
-func (r *Row) updateCell(c *cell, text string) {
+func (r *Row) modifyCell(c *cell, text string) {
 	c.setTextLines(text)
 
 	r.setHeight(c)
@@ -920,34 +961,35 @@ func (r *Row) updateIndexes(c *cell) {
 }
 
 type cell struct {
-	id         uint8
-	font       *font.Font
-	image      *image.Image
-	color      Color
-	textLines  []font.Text
-	imageScale float64
-	width      unit.MM
-	height     unit.MM
-	offsetH    unit.MM
-	offsetV    unit.MM
-	fontSize   unit.PT
-	borderSize unit.PT
-	borderMask uint8
-	colspan    uint8
-	rowspan    uint8
-	alignH     uint8
-	alignV     uint8
-	wrapped    bool
-	static     bool
-	busy       bool
+	id          uint8
+	font        *font.Font
+	image       *image.Image
+	textColor   Color
+	borderColor Color
+	textLines   []font.Text
+	imageScale  float64
+	width       unit.MM
+	height      unit.MM
+	offsetH     unit.MM
+	offsetV     unit.MM
+	fontSize    unit.PT
+	borderSize  unit.PT
+	border      uint8
+	colspan     uint8
+	rowspan     uint8
+	alignH      uint8
+	alignV      uint8
+	wrapped     bool
+	static      bool
+	busy        bool
 }
 
 func (c *cell) setTextLines(text string) {
-	c.textLines = c.textLines[:0]
-
-	if text == "" {
+	if c.font == nil || text == "" {
 		return
 	}
+
+	c.textLines = c.textLines[:0]
 
 	if c.wrapped {
 		c.textLines = append(c.textLines, c.font.SplitText(text, c.fontSize, c.width, c.textLines)...)
@@ -959,14 +1001,19 @@ func (c *cell) setTextLines(text string) {
 }
 
 // BT /[FontAlias] [FontSize] Tf 1 0 0 1 [X] [Y] Tm <[TextHex]> Tj ET
-func (c *cell) render(buf *buffer.Buffer, x, y unit.MM, parentColor Color) {
-	if !c.color.Equal(parentColor) {
-		buf.WriteColor(c.color.RGB())
-		defer buf.WriteColor(parentColor.RGB())
+func (c *cell) render(buf *buffer.Buffer, x, y unit.MM, parentTextColor, parentBorderColor Color) {
+	if !c.textColor.isDefault() {
+		buf.WriteTextColor(c.textColor.RGB())
+		defer buf.WriteTextColor(parentTextColor.RGB())
 	}
 
-	if c.borderMask != 0 {
-		renderBorder(buf, x, y, c.width, c.height, c.borderMask, c.borderSize)
+	if c.border > 0 {
+		if !c.borderColor.isDefault() {
+			buf.WriteBorderColor(c.borderColor.RGB())
+			defer buf.WriteBorderColor(parentBorderColor.RGB())
+		}
+
+		renderBorder(buf, x, y, c.width, c.height, c.border, c.borderSize)
 	}
 
 	if c.image != nil {
@@ -991,10 +1038,7 @@ func (c *cell) render(buf *buffer.Buffer, x, y unit.MM, parentColor Color) {
 		dx := c.lineDx(i)
 		dy := c.lineDy(i)
 
-		cx := x + dx
-		cy := y + dy
-
-		buf.WriteText(c.font, cx, cy, c.textLines[i].Data())
+		buf.WriteText(c.font, x+dx, y+dy, c.textLines[i].Data())
 	}
 
 	buf.WriteStringLn("ET")
