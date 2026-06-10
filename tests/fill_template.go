@@ -7,10 +7,10 @@ import (
 
 func prepareTemplate() (*pdf_craft.Core, error) {
 	c := pdf_craft.NewCore(pdf_craft.Landscape)
-	c.SetMargins(3, 3, 3, 8)
+	c.SetMargins(3, 3, 3, 3)
 	c.SetDefaultFontSize(6)
 	c.SetDefaultBorderSize(0.3)
-	c.Compress()
+	c.WithCompression()
 
 	err := c.SetFontRegular("../fonts/LiberationSans-Regular.ttf")
 	if err != nil {
@@ -57,8 +57,6 @@ func (dto DTO) fillTemplate(c *pdf_craft.Core) ([]byte, error) {
 		Build(dto.signatories).
 		Build(dto.shippingHeaders).
 		Build(dto.shippingBody)
-
-	constructor.Render()
 
 	return constructor.Bytes()
 }
@@ -267,27 +265,27 @@ func tableNumberHeader(columns []unit.MM) func(*pdf_craft.Block) {
 }
 
 func tableDetails(columns []unit.MM) pdf_craft.RepeaterApplier {
-	return func(block *pdf_craft.Block, ordered []string) {
+	return func(block *pdf_craft.Block, section []string) {
 		table := block.Slot().
 			Table(1, columns)
 
 		table.Row().
-			Cell(ordered[0], pdf_craft.CellOptions{ID: 0, Align: "CB", Border: "tblR"}).
-			Outlined(ordered[1], pdf_craft.CellOptions{ID: 1, Align: "CB"}).
-			Outlined(ordered[2], pdf_craft.CellOptions{ID: 2, Align: "LB", Wrap: true}).
-			Outlined(ordered[3], pdf_craft.CellOptions{ID: 3, Align: "CB"}).
-			Outlined(ordered[4], pdf_craft.CellOptions{ID: 4, Align: "RB"}).
-			Outlined(ordered[5], pdf_craft.CellOptions{ID: 5, Align: "LB"}).
-			Outlined(ordered[6], pdf_craft.CellOptions{ID: 6, Align: "RB"}).
-			Outlined(ordered[7], pdf_craft.CellOptions{ID: 7, Align: "RB"}).
-			Outlined(ordered[8], pdf_craft.CellOptions{ID: 8, Align: "RB"}).
-			Outlined(ordered[9], pdf_craft.CellOptions{ID: 9, Align: "RB"}).
-			Outlined(ordered[10], pdf_craft.CellOptions{ID: 10, Align: "RB"}).
-			Outlined(ordered[11], pdf_craft.CellOptions{ID: 11, Align: "RB"}).
-			Outlined(ordered[12], pdf_craft.CellOptions{ID: 12, Align: "RB"}).
-			Outlined(ordered[13], pdf_craft.CellOptions{ID: 13, Align: "RB"}).
-			Outlined(ordered[14], pdf_craft.CellOptions{ID: 14, Align: "LB"}).
-			Outlined(ordered[15], pdf_craft.CellOptions{ID: 15, Align: "LB"})
+			Cell(section[0], pdf_craft.CellOptions{ID: 0, Align: "CB", Border: "tblR"}).
+			Outlined(section[1], pdf_craft.CellOptions{ID: 1, Align: "CB"}).
+			Outlined(section[2], pdf_craft.CellOptions{ID: 2, Align: "LB", Wrap: true}).
+			Outlined(section[3], pdf_craft.CellOptions{ID: 3, Align: "CB"}).
+			Outlined(section[4], pdf_craft.CellOptions{ID: 4, Align: "RB"}).
+			Outlined(section[5], pdf_craft.CellOptions{ID: 5, Align: "LB"}).
+			Outlined(section[6], pdf_craft.CellOptions{ID: 6, Align: "RB"}).
+			Outlined(section[7], pdf_craft.CellOptions{ID: 7, Align: "RB"}).
+			Outlined(section[8], pdf_craft.CellOptions{ID: 8, Align: "RB"}).
+			Outlined(section[9], pdf_craft.CellOptions{ID: 9, Align: "RB"}).
+			Outlined(section[10], pdf_craft.CellOptions{ID: 10, Align: "RB"}).
+			Outlined(section[11], pdf_craft.CellOptions{ID: 11, Align: "RB"}).
+			Outlined(section[12], pdf_craft.CellOptions{ID: 12, Align: "RB"}).
+			Outlined(section[13], pdf_craft.CellOptions{ID: 13, Align: "RB"}).
+			Outlined(section[14], pdf_craft.CellOptions{ID: 14, Align: "LB"}).
+			Outlined(section[15], pdf_craft.CellOptions{ID: 15, Align: "LB"})
 	}
 }
 
@@ -370,7 +368,7 @@ func (dto DTO) shippingHeaders(block *pdf_craft.Block) {
 
 func (dto DTO) shippingBody(block *pdf_craft.Block) {
 	columns := []unit.MM{44, 44, 44, 10}
-	rowOptions := pdf_craft.RowOptions{Height: 4}
+	rowOptions := pdf_craft.RowOptions{MinHeight: 4}
 
 	table := block.Slot(
 		pdf_craft.NodeOptions{

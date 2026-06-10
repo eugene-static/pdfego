@@ -15,10 +15,12 @@ const (
 	imageCell
 )
 
+// Columns возвращает слайс значений в миллиметрах. Функция удобна для задания ширин колонок таблицы.
 func Columns(columns ...unit.MM) []unit.MM {
 	return columns
 }
 
+// Constructor -- главный узел дерева построения макета документа.
 type Constructor struct {
 	core      *Core
 	paginator *Paginator
@@ -31,6 +33,7 @@ type Constructor struct {
 	dy        unit.MM
 }
 
+// New создает новый экземпляр конструктора с заданным ядром. Задает первую страницу макета.
 func New(core *Core) *Constructor {
 	core.startDocument()
 	core.newPage()
@@ -50,6 +53,19 @@ func New(core *Core) *Constructor {
 	}
 }
 
+// Build использует функцию BlockApplier для построения одного блока.
+//
+// Пример:
+//
+//	func title(block *Block) {
+//		block.Slot().Table(1, Columns(20)).
+//			Row().Cell("Документ", CellOptions{Font: "BOLD", FontSize: 14, Align: "CT"}
+//	}
+//
+//	func Fill() {
+//		...
+//		constructor.Build(title)
+//		...
 func (c *Constructor) Build(applier BlockApplier) *Constructor {
 	c.render()
 
@@ -59,6 +75,7 @@ func (c *Constructor) Build(applier BlockApplier) *Constructor {
 	return c
 }
 
+// NewPage создает новую страницу.
 func (c *Constructor) NewPage() {
 	c.render()
 	c.renderPage()
@@ -68,23 +85,26 @@ func (c *Constructor) NewPage() {
 	c.x, c.y = c.x0, c.y0
 }
 
-func (c *Constructor) Render() {
+// Bytes завершает документ и отдает бинарные данные готового документа и ошибку, если такова была во время создания и рендеринга макета.
+func (c *Constructor) Bytes() ([]byte, error) {
 	c.render()
 	c.renderPage()
 
 	c.core.finishDocument()
-}
 
-func (c *Constructor) Bytes() ([]byte, error) {
 	return c.core.bytes(), c.core.err()
 }
 
+// Возвращает экземпляр Block. Все блоки располагаются вертикально друг за другом.
+// При каждом новом вызове метода, предыдущий экземпляр рендерится и больше не может быть изменен.
 func (c *Constructor) Block(options ...NodeOptions) *Block {
 	c.newBlock(options)
 
 	return &c.block
 }
 
+// Возвращает экземпляр Header. Этот блок будет повторяться в начале каждой новой страницы с момента инициализации
+// и до вызова метода ReleaseHeader(). Так же он отрисуется в момент инициализации.
 func (c *Constructor) Header(options ...NodeOptions) *Header {
 	c.newBlock(options)
 
@@ -101,12 +121,14 @@ func (c *Constructor) Header(options ...NodeOptions) *Header {
 	}
 }
 
+// ReleaseHeader останавливает повторение блока Header на каждой странице.
 func (c *Constructor) ReleaseHeader() {
 	c.core.page.releaseHeader()
 
 	c.y0 = c.core.page.y0()
 }
 
+// Инициализирует повторяющийся блок.
 func (c *Constructor) Repeater(sectioner Sectioner, options ...NodeOptions) *Repeater {
 	c.newBlock(options)
 
@@ -117,6 +139,8 @@ func (c *Constructor) Repeater(sectioner Sectioner, options ...NodeOptions) *Rep
 	}
 }
 
+// Возвращает экземпляр Watermark. Этот блок рендерится на каждой странице с момента инициализации.
+// В отличие от Header не влияет на расположениение других узлов конструктора.
 func (c *Constructor) Watermark(options ...WatermarkOptions) *Watermark {
 	opts := getOptions(options)
 	alignH, alignV := parseAlignment(opts.Align)
@@ -134,39 +158,50 @@ func (c *Constructor) Watermark(options ...WatermarkOptions) *Watermark {
 	}
 }
 
-func (c *Constructor) Paginator(offset int) *Paginator {
+// Возвращает экземпляр Paginator. Этот блок рендерится на каждой странице с момента иницализации.
+// Располгается внизу документа в области между нижней границей и нижнем краем страницы.
+// Пишет номер текущей страницы в первую ячейку с ID = 0.
+func (c *Constructor) Paginator(options ...PaginatorOptions) *Paginator {
+	opts := getOptions(options)
 	x0 := c.core.page.x0()
 	y0 := c.core.page.yB()
+	alignH, alignV := parseAlignment(opts.Align)
 
 	paginator := &Paginator{
 		block:  &Block{core: c.core},
 		buf:    c.core.page.buffer,
 		x0:     x0,
 		y0:     y0,
-		offset: offset,
+		offset: opts.Offset,
+		alignH: alignH,
+		alignV: alignV,
 	}
 
 	return paginator
 }
 
+// Paginate создает блок для отображения номера страницы.
 func (c *Constructor) Paginate(offset int) {
-	c.paginator = c.Paginator(offset)
+	c.paginator = c.Paginator(PaginatorOptions{Offset: offset, Align: "CT"})
 
-	c.paginator.Slot().Table(1, Columns(5)).Row().Cell("0", CellOptions{TextColor: ColorGray50, ID: 0})
+	c.paginator.Slot().Table(1, Columns(5)).Row().Cell("0", CellOptions{TextColor: ColorGray50})
 }
 
+// Reset сбрасывает конструктор до момента инициализации. Значения ядра сохраняются.
 func (c *Constructor) Reset() {
 	c.block.reset()
 
 	c.x0, c.y0 = c.core.page.x0y0()
 	c.x, c.y = c.x0, c.y0
 
-	c.core.releaseBuffers()
-	//c.core.err = nil
+	c.core.page.reset()
+	c.core.setError(nil)
 	c.core.startDocument()
 	c.core.newPage()
 }
 
+// Новый блок не создается. Вся информация, записанная в блок рендерится и записывается в буфер страницы.
+// После блок сбрасывается и к нему применяются новые опции. Поэтому нельзя изменять "старый блок" после вызова "нового".
 func (c *Constructor) newBlock(options []NodeOptions) {
 	opts := getOptions(options)
 
@@ -205,21 +240,27 @@ func (c *Constructor) renderPage() {
 	c.core.renderPage()
 }
 
+// Block -- экземпляр блока. Все блоки располагаются друг за другом вертикально, независимо от того, кем был создан экземпляр.
+// Блок в составе конструктора неделим: если его высота больше оставшегося места на странице, он будет отображен на следующей странице.
 type Block struct {
-	core          *Core
-	sectioner     Sectioner
-	sectionsCount int
-	slots         []Slot
-	indentH       unit.MM
-	indentV       unit.MM
-	ledge         unit.MM
-	spacing       unit.MM
-	border        uint8
-	borderSize    unit.PT
+	core       *Core
+	slots      []Slot
+	indentH    unit.MM
+	indentV    unit.MM
+	ledge      unit.MM
+	spacing    unit.MM
+	border     uint8
+	borderSize unit.PT
 }
 
 type BlockApplier func(block *Block)
 
+// Apply вызывает функцию func(block *Block).
+func (b *Block) Apply(applier BlockApplier) {
+	applier(b)
+}
+
+// Возвращает экземпляр Slot.
 func (b *Block) Slot(options ...NodeOptions) *Slot {
 	opts := getOptions(options)
 
@@ -238,10 +279,6 @@ func (b *Block) Slot(options ...NodeOptions) *Slot {
 	return &b.slots[len(b.slots)-1]
 }
 
-func (b *Block) Apply(applier BlockApplier) {
-	applier(b)
-}
-
 func (b *Block) render(buf *buffer.Buffer, x, y unit.MM) {
 	x += b.indentH
 	y += b.indentV
@@ -249,7 +286,7 @@ func (b *Block) render(buf *buffer.Buffer, x, y unit.MM) {
 	if b.border > 0 {
 		width := b.width()
 		height := b.height()
-		borderSize := coalesce(b.borderSize, b.core.DefaultBorderSize())
+		borderSize := coalesce(b.borderSize, b.core.defaultBorderSize())
 
 		renderBorder(buf, x, y, width, height, b.border, borderSize)
 	}
@@ -288,10 +325,6 @@ func (b *Block) width() (w unit.MM) {
 	return w
 }
 
-func (b *Block) empty() bool {
-	return len(b.slots) == 0
-}
-
 func (b *Block) reset() {
 	b.slots = b.slots[:0]
 
@@ -303,6 +336,8 @@ func (b *Block) reset() {
 	b.borderSize = 0
 }
 
+// Header -- блок, повторяющийся в начале каждой страницы. Он является частью макета документа, поэтому не может быть изменен
+// после создания нового блока.
 type Header struct {
 	block     *Block
 	buf       *buffer.Buffer
@@ -311,10 +346,7 @@ type Header struct {
 	setHeight func(h unit.MM)
 }
 
-func (h *Header) Slot(options ...NodeOptions) *Slot {
-	return h.block.Slot(options...)
-}
-
+// Apply вызывает переданную функцию и сохраняет результат отрисовки в собственном буфере.
 func (h *Header) Apply(applier BlockApplier) {
 	applier(h.block)
 
@@ -325,6 +357,8 @@ func (h *Header) Apply(applier BlockApplier) {
 	h.block.render(h.buf, h.x0, h.y0)
 }
 
+// Repeater -- повторяющийся блок. Количество повторений задается через интерфейс Sectioner.
+// Он является частью макета документа, поэтому не может быть изменен после создания нового блока.
 type Repeater struct {
 	block      *Block
 	sectioner  Sectioner
@@ -333,14 +367,76 @@ type Repeater struct {
 
 type RepeaterApplier func(block *Block, section []string)
 
+// Sectioner -- интерфейс взаимодействия с Repeater.
+// Метод Section должен возвращать слайс строк, где индекс строки будет соответствовать индексу ячейки, в которую будет записываться значение этой строки.
+// Метод Count должен возвращать количество таких секций и будет соответствовать количеству повторений.
+//
+// Пример:
+//
+//	type Employee struct {
+//		ID   int
+//		Name string
+//	}
+//
+//	type Employees struct {
+//		Location  string
+//		Employees []Employee
+//	}
+//
+//	func (emp *Employees) Section(index int) []string {
+//		if index >= len(emp.Employees) {
+//			return nil
+//		}
+//
+//		section := make([]string, 2)
+//
+//		section[0] = strconv.Itoa(emp.Employees[index].ID)
+//		section[1] = emp.Employees[index].Name
+//
+//		return section
+//	}
+//
+//	func (emp *Employees) Count() int {
+//		return len(emp.Employees)
+//	}
+//
+//	func employeesTable(block *Block, section []string) {
+//		table := block.Slot().Table(2, Columns(10, 20))
+//
+//		table.Row().
+//			Cell(section[0], CellOptions{ID: 0, Border: "o"}).
+//			Cell(section[1], CellOptions{ID: 1, Border: "o"})
+//	}
+//
+//	func fill(core *Core) {
+//		constructor := New(core)
+//
+//		employees := &Employees{
+//			Location: "Moscow",
+//			Employees: []Employee{
+//				{
+//					ID: 123,
+//					Name: "Ярослав Дронов",
+//				},
+//				{
+//					ID: 129,
+//					Name: "Сергей Пенкин",
+//				},
+//			},
+//		}
+//
+//		constructor.Repeater(employees).Repeat(employeesTable)
+//	}
 type Sectioner interface {
 	Section(int) []string
 	Count() int
 }
 
+// Repeat повторит переданный блок sectioner.Count() раз. Макет блока не перестраивается при каждом повторении,
+// а модифицируется в зависимости от переданного текста.
 func (r *Repeater) Repeat(applier RepeaterApplier) {
 	sectionsCount := r.sectioner.Count()
-	if sectionsCount == 0 {
+	if sectionsCount <= 0 {
 		r.block.reset()
 
 		return
@@ -360,6 +456,8 @@ func (r *Repeater) Repeat(applier RepeaterApplier) {
 	}
 }
 
+// Watermark -- блок, повторяющейся на каждой странице. Водяной знак не является частью основного макета документа и будет располагаться
+// поверх него. Позиционирование блока происходит в пределах границ страницы.
 type Watermark struct {
 	block  *Block
 	buf    *buffer.Buffer
@@ -369,21 +467,14 @@ type Watermark struct {
 	alignV uint8
 }
 
-func (w *Watermark) Slot(options ...NodeOptions) *Slot {
-	return w.block.Slot(options...)
-}
+// Apply вызывает переданную функцию и сохраняет результат отрисовки в собственном буфере.
+func (w *Watermark) Apply(applier BlockApplier) {
+	applier(w.block)
 
-func (w *Watermark) Render() {
 	dx := w.dx()
 	dy := w.dy()
 
 	w.block.render(w.buf, w.x0+dx, w.y0+dy)
-}
-
-func (w *Watermark) Apply(applier BlockApplier) {
-	applier(w.block)
-
-	w.Render()
 }
 
 func (w *Watermark) dx() (dx unit.MM) {
@@ -412,6 +503,9 @@ func (w *Watermark) dy() (dy unit.MM) {
 	return dy
 }
 
+// Paginator -- блок, повторяющийся на каждой странице между ее нижней границей и ее нижним краем.
+// Пагинатор не является частью основного макета документа. Макет блока не перестраивается при каждом повторении,
+// а модифицируется в зависимости от текста номера страницы.
 type Paginator struct {
 	block  *Block
 	buf    *buffer.Buffer
@@ -419,23 +513,27 @@ type Paginator struct {
 	y0     unit.MM
 	offset int
 	alignH uint8
+	alignV uint8
 }
 
+// Создает экземпляр Slot аналогично такому же методу у Block.
 func (p *Paginator) Slot(options ...NodeOptions) *Slot {
 	return p.block.Slot(options...)
 }
 
+// Apply вызывает переданную функцию.
 func (p *Paginator) Apply(applier BlockApplier) {
 	applier(p.block)
 }
 
 func (p *Paginator) render() {
-	num := strconv.Itoa(p.block.core.pagesCount + p.offset)
+	num := strconv.Itoa(p.block.core.page.count + p.offset)
 
 	dx := p.dx()
+	dy := p.dy()
 
 	p.block.modify([]string{num})
-	p.block.render(p.buf, p.x0+dx, p.y0)
+	p.block.render(p.buf, p.x0+dx, p.y0+dy)
 }
 
 func (p *Paginator) dx() (dx unit.MM) {
@@ -451,6 +549,21 @@ func (p *Paginator) dx() (dx unit.MM) {
 	return dx
 }
 
+func (p *Paginator) dy() (dy unit.MM) {
+	switch p.alignV {
+	case alignB:
+		dy += p.block.core.page.marginBottom - p.block.height()
+	case alignM:
+		dy += (p.block.core.page.marginBottom - p.block.height()) / 2
+	default:
+		dy += 0
+	}
+
+	return dy
+}
+
+// Slot представляет собой слот. Слоты располагаются друг за другом горизонтально. Может содержать либо дочерние блоки Block, либо таблицу Table.
+// Высота родительского блока будет являться высотой самого высокого слота.
 type Slot struct {
 	core       *Core
 	blocks     []Block
@@ -465,10 +578,13 @@ type Slot struct {
 
 type SlotApplier func(slot *Slot)
 
+// Создает дочерний экземпляр блока Block. Если к слоту была добавлена таблица Table, то конструктор вернет ошибку, а блоки не будут отриованы.
+// Ширина слота будет являться шириной самого широкого блока. Высота слота будет суммой высот всех блоков.
 func (s *Slot) Block(options ...NodeOptions) *Block {
 	if s.table != nil {
 		err := errors.New("слот уже содержит таблицу")
-		s.core.writeError(err)
+
+		s.core.setError(err)
 	}
 
 	opts := getOptions(options)
@@ -488,15 +604,17 @@ func (s *Slot) Block(options ...NodeOptions) *Block {
 	return &s.blocks[len(s.blocks)-1]
 }
 
-func (s *Slot) Table(rowsNum int, columns []unit.MM, options ...TableOptions) *Table {
+// Создает дочерний экзмеляр таблицы Table. Таблица у слота может быть только одна. При потоврном вызове метода, таблица перезапишется на новую.
+// Для инициализации таблицы необходимо указать количество строк и слайс ширин всех столбцов.
+func (s *Slot) Table(rowsNum uint8, columns []unit.MM, options ...TableOptions) *Table {
 	if len(s.blocks) > 0 {
 		err := errors.New("слот уже содержит блоки")
-		s.core.writeError(err)
+		s.core.setError(err)
 	}
 
 	opts := getOptions(options)
 
-	columnsNum := len(columns)
+	columnsNum := uint8(len(columns))
 
 	t := &Table{
 		core:        s.core,
@@ -519,6 +637,7 @@ func (s *Slot) Table(rowsNum int, columns []unit.MM, options ...TableOptions) *T
 	return t
 }
 
+// Apply вызывает переданную функцию.
 func (s *Slot) Apply(applier SlotApplier) *Slot {
 	applier(s)
 
@@ -532,7 +651,7 @@ func (s *Slot) render(buf *buffer.Buffer, x, y unit.MM) {
 	if s.border > 0 {
 		width := s.width()
 		height := s.height()
-		borderSize := coalesce(s.borderSize, s.core.DefaultBorderSize())
+		borderSize := coalesce(s.borderSize, s.core.defaultBorderSize())
 
 		renderBorder(buf, x, y, width, height, s.border, borderSize)
 	}
@@ -595,6 +714,7 @@ func (s *Slot) width() (w unit.MM) {
 	return w
 }
 
+// Table представляет собой таблицу.
 type Table struct {
 	core        *Core
 	columns     []unit.MM
@@ -614,6 +734,15 @@ type Table struct {
 
 type TableApplier func(*Table)
 
+// Apply вызывает переданную функцию.
+func (t *Table) Apply(applier TableApplier) {
+	applier(t)
+}
+
+// Row представляет собой строку таблицы Table. При попытке вызова метода большее число раз, чем количество строк в таблице,
+// будет перезаписываться последняя строка.
+//
+// Возможно задать минимальную высоту строки.
 func (t *Table) Row(options ...RowOptions) *Row {
 	opts := getOptions(options)
 
@@ -628,16 +757,12 @@ func (t *Table) Row(options ...RowOptions) *Row {
 	return r
 }
 
-func (t *Table) Apply(applier TableApplier) {
-	applier(t)
-}
-
 func (t *Table) newRow(row *Row, options RowOptions) {
 	columnsLen := len(t.columns)
 	start := int(t.rowIndex) * columnsLen
 	end := start + columnsLen
 
-	row.height = options.Height
+	row.height = options.MinHeight
 	row.core = t.core
 	row.columns = t.columns
 	row.columnsLen = uint8(columnsLen)
@@ -655,19 +780,19 @@ func (t *Table) render(buf *buffer.Buffer, x, y unit.MM) {
 	y += t.indentV
 
 	if !t.textColor.isDefault() {
-		buf.WriteTextColor(t.textColor.RGB())
-		defer buf.WriteTextColor(ColorDefault.RGB())
+		buf.WriteTextColor(t.textColor.rgb())
+		defer buf.WriteTextColor(ColorDefault.rgb())
 	}
 
 	if t.border > 0 {
 		if !t.borderColor.isDefault() {
-			buf.WriteBorderColor(t.borderColor.RGB())
-			defer buf.WriteBorderColor(ColorDefault.RGB())
+			buf.WriteBorderColor(t.borderColor.rgb())
+			defer buf.WriteBorderColor(ColorDefault.rgb())
 		}
 
 		width := t.width()
 		height := t.height()
-		borderSize := coalesce(t.borderSize, t.core.DefaultBorderSize())
+		borderSize := coalesce(t.borderSize, t.core.defaultBorderSize())
 
 		renderBorder(buf, x, y, width, height, t.border, borderSize)
 	}
@@ -743,6 +868,7 @@ func (t *Table) setCellHeight(ri, cpi int) {
 	t.cellsPool[cpi].height = height
 }
 
+// Нельзя допустить вызов строки больше, чем задано при инициализации таблицы.
 func (t *Table) setRowIndex() {
 	if int(t.rowIndex) >= len(t.rows) {
 		t.rowIndex--
@@ -762,6 +888,7 @@ func (t *Table) decrementRowSpans() {
 	}
 }
 
+// Row представляет собой экземпляр строки таблицы Table. На расстояние между строками влияет значение TableOptions.SpacingV.
 type Row struct {
 	core        *Core
 	cells       []cell
@@ -774,6 +901,7 @@ type Row struct {
 	//TODO: добавить border для строк
 }
 
+// Cell -- ячейка таблицы с заданным текстом. Использует шрифт, цвет по-умолчанию. Без рамки, позиционирование CM.
 func (r *Row) Cell(text string, options ...CellOptions) *Row {
 	opts := getOptions(options)
 
@@ -782,6 +910,7 @@ func (r *Row) Cell(text string, options ...CellOptions) *Row {
 	return r
 }
 
+// Label -- ячейка таблицы с заданным текстом. Без рамки, позиционирование LB.
 func (r *Row) Label(text string, options ...CellOptions) *Row {
 	opts := getOptions(options)
 
@@ -792,6 +921,7 @@ func (r *Row) Label(text string, options ...CellOptions) *Row {
 	return r
 }
 
+// LabelSpan -- Label с заданным Colspan.
 func (r *Row) LabelSpan(text string, colspan uint8, options ...CellOptions) *Row {
 	opts := getOptions(options)
 
@@ -803,6 +933,7 @@ func (r *Row) LabelSpan(text string, colspan uint8, options ...CellOptions) *Row
 	return r
 }
 
+// LabelHead -- Label, где в качестве шрифта используется заданный шрифт с псевдонимом "BOLD".
 func (r *Row) LabelHead(text string, options ...CellOptions) *Row {
 	opts := getOptions(options)
 
@@ -814,6 +945,7 @@ func (r *Row) LabelHead(text string, options ...CellOptions) *Row {
 	return r
 }
 
+// Blank -- ячейка таблицы, бланк, с заданным текстом и позиционированием. Тонкая граница снизу по-умолчанию.
 func (r *Row) Blank(text, align string, options ...CellOptions) *Row {
 	opts := getOptions(options)
 
@@ -825,6 +957,7 @@ func (r *Row) Blank(text, align string, options ...CellOptions) *Row {
 	return r
 }
 
+// BlankSpan -- Blank с заданным Colspan.
 func (r *Row) BlankSpan(text, align string, colspan uint8, options ...CellOptions) *Row {
 	opts := getOptions(options)
 
@@ -837,6 +970,7 @@ func (r *Row) BlankSpan(text, align string, colspan uint8, options ...CellOption
 	return r
 }
 
+// BlankEmpty -- пустой Blank, без текста.
 func (r *Row) BlankEmpty(options ...CellOptions) *Row {
 	opts := getOptions(options)
 
@@ -847,6 +981,7 @@ func (r *Row) BlankEmpty(options ...CellOptions) *Row {
 	return r
 }
 
+// Form -- Blank с переносом текста.
 func (r *Row) Form(text, align string, options ...CellOptions) *Row {
 	opts := getOptions(options)
 
@@ -859,6 +994,7 @@ func (r *Row) Form(text, align string, options ...CellOptions) *Row {
 	return r
 }
 
+// FormSpan -- BlankSpan с переносом текста.
 func (r *Row) FormSpan(text, align string, colspan uint8, options ...CellOptions) *Row {
 	opts := getOptions(options)
 
@@ -872,6 +1008,7 @@ func (r *Row) FormSpan(text, align string, colspan uint8, options ...CellOptions
 	return r
 }
 
+// Paragraph -- ячейка таблицы с заданным текстом. Позиционирование "CB"
 func (r *Row) Paragraph(text string, options ...CellOptions) *Row {
 	opts := getOptions(options)
 
@@ -882,22 +1019,25 @@ func (r *Row) Paragraph(text string, options ...CellOptions) *Row {
 	return r
 }
 
+// Underscore -- ячейка таблицы с заданным текстом. Размер шрифта меньше заданного по-умолчанию на 1 пункт.
+// Позиционирование "CT".
 func (r *Row) Underscore(text string, options ...CellOptions) *Row {
 	opts := getOptions(options)
 
 	opts.Align = coalesce(opts.Align, "CT")
-	opts.FontSize = coalesce(opts.FontSize, r.core.DefaultFontSize().Sub(1))
+	opts.FontSize = coalesce(opts.FontSize, r.core.defaultFontSize().Sub(1))
 
 	r.newCell(text, defaultCell, opts)
 
 	return r
 }
 
+// UnderscoreSpan -- Underscore с заданным Colspan.
 func (r *Row) UnderscoreSpan(text string, colspan uint8, options ...CellOptions) *Row {
 	opts := getOptions(options)
 
 	opts.Align = coalesce(opts.Align, "CT")
-	opts.FontSize = coalesce(opts.FontSize, r.core.DefaultFontSize().Sub(1))
+	opts.FontSize = coalesce(opts.FontSize, r.core.defaultFontSize().Sub(1))
 	opts.Colspan = colspan
 
 	r.newCell(text, defaultCell, opts)
@@ -905,6 +1045,7 @@ func (r *Row) UnderscoreSpan(text string, colspan uint8, options ...CellOptions)
 	return r
 }
 
+// Outlined -- ячейка таблицы с заданным текстом и рамкой из тонкой линии вокруг ячейки.
 func (r *Row) Outlined(text string, options ...CellOptions) *Row {
 	opts := getOptions(options)
 
@@ -915,12 +1056,17 @@ func (r *Row) Outlined(text string, options ...CellOptions) *Row {
 	return r
 }
 
+// Skip -- пустая ячейка таблицы.
 func (r *Row) Skip() *Row {
 	r.newCell("", defaultCell, CellOptions{})
 
 	return r
 }
 
+// Image -- ячейка таблицы с заданным изображением. Изображение должно быть заранее задано методом [Core.ReadImage] или [Core.AddImage].
+// Чтобы выбрать заданное изображение, необходимо указать его псевдоним. Если изображение не будет найдено, вместо него будет использован
+// текст, записанный в [CellOptions.PlaceHolder].
+// Размер изображения будет масштабирован по меньшей стороне ячейки.
 func (r *Row) Image(alias string, options ...CellOptions) *Row {
 	opts := getOptions(options)
 
@@ -934,6 +1080,8 @@ func (r *Row) newCell(text string, profile uint8, options CellOptions) {
 
 	c := &r.cells[r.columnIndex]
 
+	text = coalesce(text, options.PlaceHolder)
+
 	c.id = options.ID
 	c.height = options.Height
 	c.static = options.Height > 0
@@ -942,7 +1090,7 @@ func (r *Row) newCell(text string, profile uint8, options CellOptions) {
 	c.textColor = options.TextColor
 	c.borderColor = options.BorderColor
 	c.border = parseBorder(options.Border)
-	c.borderSize = coalesce(options.BorderSize, r.core.DefaultBorderSize())
+	c.borderSize = coalesce(options.BorderSize, r.core.defaultBorderSize())
 	c.colspan = coalesce(options.Colspan, 1)
 	c.rowspan = coalesce(options.Rowspan, 1)
 	c.width = r.cellWidth(c.colspan)
@@ -951,13 +1099,12 @@ func (r *Row) newCell(text string, profile uint8, options CellOptions) {
 	if profile == imageCell {
 		c.image = r.core.image(text)
 		c.imageScale = coalesce(options.Scale, 1)
-		text = options.PlaceHolder
 	}
 
 	if text != "" {
 		c.wrapped = options.Wrap
 		c.alignH, c.alignV = parseAlignment(options.Align)
-		c.fontSize = coalesce(options.FontSize, r.core.DefaultFontSize())
+		c.fontSize = coalesce(options.FontSize, r.core.defaultFontSize())
 		c.font = r.core.font(coalesce(options.Font, FontRegular))
 		c.textLines = make([]font.Text, 0, 10)
 
@@ -968,13 +1115,14 @@ func (r *Row) newCell(text string, profile uint8, options CellOptions) {
 	r.updateIndexes(c)
 }
 
+// При модификации текста может измениться высота ячейки.
 func (r *Row) modifyCell(c *cell, text string) {
 	c.setTextLines(text)
 
 	r.setHeight(c)
 }
 
-// Ширина ячейки равна сумме ширин всех колонок, которые она занимает.
+// Ширина ячейки равна сумме ширин всех колонок, которые она занимает, и расстояний между этими колонками.
 func (r *Row) cellWidth(colspan uint8) (w unit.MM) {
 	for i := r.columnIndex; i < r.columnsLen && i < r.columnIndex+colspan; i++ {
 		w += r.columns[i] + r.spacing
@@ -1060,35 +1208,47 @@ func (c *cell) setTextLines(text string) {
 	c.textLines = append(c.textLines, c.font.FullText(text, c.fontSize))
 }
 
-// BT /[FontAlias] [FontSize] Tf 1 0 0 1 [X] [Y] Tm <[TextHex]> Tj ET
 func (c *cell) render(buf *buffer.Buffer, x, y unit.MM, parentTextColor, parentBorderColor Color) {
-	if !c.textColor.isDefault() {
-		buf.WriteTextColor(c.textColor.RGB())
-		defer buf.WriteTextColor(parentTextColor.RGB())
-	}
-
 	if c.border > 0 {
-		if !c.borderColor.isDefault() {
-			buf.WriteBorderColor(c.borderColor.RGB())
-			defer buf.WriteBorderColor(parentBorderColor.RGB())
-		}
-
-		renderBorder(buf, x, y, c.width, c.height, c.border, c.borderSize)
+		c.renderBorder(buf, x, y, parentBorderColor)
 	}
 
 	if c.image != nil {
-		h := c.imageHeight()
-		w := c.imageWidth(h)
-		dy := c.imageDy(h)
-		dx := c.imageDx(w)
-
-		buf.WriteImage(x+dx, y+dy, w, h, c.image.Alias())
+		c.renderImage(buf, x, y)
 
 		return
 	}
 
-	if len(c.textLines) == 0 {
+	if len(c.textLines) != 0 {
+		c.renderText(buf, x, y, parentTextColor)
+
 		return
+	}
+}
+
+func (c *cell) renderImage(buf *buffer.Buffer, x, y unit.MM) {
+	var w, h, dx, dy unit.MM
+
+	if c.height < c.width {
+		h = c.imageHeight(0)
+		w = c.imageWidth(h)
+		dy = c.imageDy(h)
+		dx = c.imageDx(w)
+	} else {
+		w = c.imageWidth(0)
+		h = c.imageHeight(w)
+		dx = c.imageDx(w)
+		dy = c.imageDy(h)
+	}
+
+	buf.WriteImage(x+dx, y+dy, w, h, c.image.Alias())
+}
+
+// BT /[FontAlias] [FontSize] Tf 1 0 0 1 [X] [Y] Tm <[TextHex]> Tj ET
+func (c *cell) renderText(buf *buffer.Buffer, x, y unit.MM, parentTextColor Color) {
+	if !c.textColor.isDefault() {
+		buf.WriteTextColor(c.textColor.rgb())
+		defer buf.WriteTextColor(parentTextColor.rgb())
 	}
 
 	buf.WriteStringLn("BT")
@@ -1102,6 +1262,15 @@ func (c *cell) render(buf *buffer.Buffer, x, y unit.MM, parentTextColor, parentB
 	}
 
 	buf.WriteStringLn("ET")
+}
+
+func (c *cell) renderBorder(buf *buffer.Buffer, x, y unit.MM, parentBorderColor Color) {
+	if !c.borderColor.isDefault() {
+		buf.WriteBorderColor(c.borderColor.rgb())
+		defer buf.WriteBorderColor(parentBorderColor.rgb())
+	}
+
+	renderBorder(buf, x, y, c.width, c.height, c.border, c.borderSize)
 }
 
 func (c *cell) lineDx(index int) (dx unit.MM) {
@@ -1176,15 +1345,29 @@ func (c *cell) imageDy(height unit.MM) (dy unit.MM) {
 	return dy
 }
 
-func (c *cell) imageHeight() (h unit.MM) {
-	return c.height * unit.MM(c.imageScale)
+func (c *cell) imageHeight(width unit.MM) (h unit.MM) {
+	if width == 0 {
+		return c.height * unit.MM(c.imageScale)
+	}
+
+	imgW := c.image.Width()
+	scale := width / unit.MM(imgW)
+
+	imgH := c.image.Height()
+	h = unit.MM(imgH) * scale
+
+	return h
 }
 
 func (c *cell) imageWidth(height unit.MM) (w unit.MM) {
-	imgW := c.image.Width()
+	if height == 0 {
+		return c.width * unit.MM(c.imageScale)
+	}
+
 	imgH := c.image.Height()
 	scale := height / unit.MM(imgH)
 
+	imgW := c.image.Width()
 	w = unit.MM(imgW) * scale
 
 	return w

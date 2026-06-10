@@ -1,5 +1,6 @@
 package pdf_craft
 
+// Color применяется для обозначения цвета текста и границ.
 type Color uint32
 
 // Базовая палитра (черный/белый/серый)
@@ -77,7 +78,7 @@ func NewColor(r, g, b uint8) Color {
 	return (Color(r) << 16) | (Color(g) << 8) | Color(b)
 }
 
-func (c Color) RGB() (r float64, g float64, b float64) {
+func (c Color) rgb() (r float64, g float64, b float64) {
 	r = float64(c >> 16 & 0xFF)
 	g = float64(c >> 8 & 0xFF)
 	b = float64(c & 0xFF)
@@ -85,7 +86,7 @@ func (c Color) RGB() (r float64, g float64, b float64) {
 	return r / 255, g / 255, b / 255
 }
 
-func (c Color) Equal(other Color) bool {
+func (c Color) equal(other Color) bool {
 	return c == other
 }
 

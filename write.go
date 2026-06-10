@@ -134,7 +134,7 @@ func (core *Core) writeFont(f *font.Font, alias string) int64 {
 
 	_, err := b.ReadFrom(cMapB)
 	if err != nil {
-		core.writeError(err)
+		core.setError(err)
 
 		return 0
 	}
@@ -203,14 +203,14 @@ func (core *Core) writeFont(f *font.Font, alias string) int64 {
 	if !ok {
 		subset, err := f.Subset()
 		if err != nil {
-			core.writeError(err)
+			core.setError(err)
 
 			return 0
 		}
 
 		compressedBytes, err := core.comp.compress(subset)
 		if err != nil {
-			core.writeError(err)
+			core.setError(err)
 
 			return 0
 		}
@@ -255,7 +255,7 @@ func (core *Core) writeImage(img *image.Image) int64 {
 		if !ok {
 			compBytes, err := core.comp.compress(alphaBytes)
 			if err != nil {
-				core.writeError(err)
+				core.setError(err)
 
 				return 0
 			}
@@ -280,7 +280,7 @@ func (core *Core) writeImage(img *image.Image) int64 {
 
 		_, err := b.Write(alphaBytes)
 		if err != nil {
-			core.writeError(err)
+			core.setError(err)
 
 			return 0
 		}
@@ -295,7 +295,7 @@ func (core *Core) writeImage(img *image.Image) int64 {
 	if !ok {
 		compressedBytes, err := core.comp.compress(imageBytes)
 		if err != nil {
-			core.writeError(err)
+			core.setError(err)
 
 			return 0
 		}
@@ -325,7 +325,7 @@ func (core *Core) writeImage(img *image.Image) int64 {
 
 	_, err := b.Write(imageBytes)
 	if err != nil {
-		core.writeError(err)
+		core.setError(err)
 
 		return 0
 	}
@@ -383,7 +383,7 @@ func (core *Core) writePage() {
 	if core.compress {
 		compressed, err := core.comp.compress(pageBytes)
 		if err != nil {
-			core.writeError(err)
+			core.setError(err)
 
 			return
 		}
@@ -399,7 +399,7 @@ func (core *Core) writePage() {
 
 	_, err := b.Write(pageBytes)
 	if err != nil {
-		core.writeError(err)
+		core.setError(err)
 
 		return
 	}

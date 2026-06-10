@@ -21,6 +21,8 @@ const (
 	Landscape = "L"
 )
 
+// Core -- ядро конструктора. Позволяет настроить конструктор единожды и переиспользовать эти настройки при каждой новой генерацией.
+// Так же содержит информацию, необходимую для различных узлов конструктора.
 type Core struct {
 	mainBuffer *buffer.Buffer
 	fonts      map[string]*font.Font
@@ -29,18 +31,24 @@ type Core struct {
 	page       page
 	fontSize   unit.PT
 	borderSize unit.PT
-	pagesCount int
-	offsets    []int
-	pageObjs   []int64
-	compress   bool
-	error      error
+	// TODO: reset
+	offsets  []int
+	pageObjs []int64
+	compress bool
+	error    error
 }
 
+// NewCore инициализирует новый экземпляр ядра конструктора с заранее заданной ориентацией страницы.
+// "P" -- портретная ориентация (по умолчанию), "L" -- альбомная. Границы соответствуют формату А4.
 func NewCore(orientation string) *Core {
 	pg := page{
-		width:  unit.PT(595.2).MM(),
-		height: unit.PT(841.89).MM(),
-		buffer: buffer.New(buffer.DefaultSize),
+		buffer:       buffer.New(buffer.DefaultSize),
+		width:        unit.PT(595.2).MM(),
+		height:       unit.PT(841.89).MM(),
+		marginLeft:   3,
+		marginTop:    3,
+		marginRight:  3,
+		marginBottom: 8,
 	}
 
 	if orientation == Landscape {
@@ -57,19 +65,29 @@ func NewCore(orientation string) *Core {
 
 	return &Core{
 		mainBuffer: buffer.New(buffer.DefaultSize),
-		comp:       comp,
 		fonts:      make(map[string]*font.Font),
 		images:     make(map[string]*image.Image),
+		comp:       comp,
 		page:       pg,
+		fontSize:   unit.PT(6),
+		borderSize: unit.PT(0.3),
 		offsets:    offsets,
 	}
 }
 
-func (core *Core) Compress() {
+// WithCompression включает компрессию страниц документа. Значительно уменьшает объем файла, но увеличивает время на генерацию.
+func (core *Core) WithCompression() {
 	core.compress = true
 }
 
-func (core *Core) SetFont(path, alias string) error {
+// ReadFont добавляет новый шрифт с заданным псевдонимом alias, который потом можно использовать в каждой ячейке таблицы.
+func (core *Core) ReadFont(path, alias string) error {
+	if alias == "" {
+		err := errors.New("псевдоним не может быть пустым")
+
+		return err
+	}
+
 	f, err := font.New(path, alias)
 	if err != nil {
 		return err
@@ -80,8 +98,9 @@ func (core *Core) SetFont(path, alias string) error {
 	return nil
 }
 
+// SetFontRegular читает и устанавливает шрифт с псевдонимом "REG". При конфигурации ячейки указывать этот псевдоним не обязательно.
 func (core *Core) SetFontRegular(path string) error {
-	err := core.SetFont(path, FontRegular)
+	err := core.ReadFont(path, FontRegular)
 	if err != nil {
 		return err
 	}
@@ -89,8 +108,9 @@ func (core *Core) SetFontRegular(path string) error {
 	return nil
 }
 
+// SetFontBold читает и устанавливает шрифт с псевдонимом "BOLD". При конфигурации ячейки с использованием метода LabelBold указывать этот псевдоним не обязательно.
 func (core *Core) SetFontBold(path string) error {
-	err := core.SetFont(path, FontBold)
+	err := core.ReadFont(path, FontBold)
 	if err != nil {
 		return err
 	}
@@ -98,14 +118,24 @@ func (core *Core) SetFontBold(path string) error {
 	return nil
 }
 
-func (core *Core) SetDefaultFontSize(fontSize int) {
-	core.fontSize = unit.PT(fontSize)
+// SetDefaultFontSize устанавливает размер шрифта для документа в пунктах. При конфигурации ячейки без явного указания размера будет использоваться заданный этой функцией.
+//
+// По-умолчанию: 6pt.
+func (core *Core) SetDefaultFontSize(fontSize unit.PT) {
+	core.fontSize = fontSize
 }
 
+// SetDefaultBorderSize устанавливает размер тонкой линии для документа в пунктах. При конфигурации ячейки без явного указания размера будет использоваться заданный этой функцией.
+// Для толстых линий будет использован это значение х3.
+//
+// По-умолчанию: 0.3pt.
 func (core *Core) SetDefaultBorderSize(size unit.PT) {
 	core.borderSize = size
 }
 
+// SetMargins устанавливает границы документа для каждой из сторон в миллиметрах.
+//
+// По умолчанию: 3, 3, 3, 8.
 func (core *Core) SetMargins(left, top, right, bottom unit.MM) {
 	core.page.marginLeft = left
 	core.page.marginTop = top
@@ -113,15 +143,19 @@ func (core *Core) SetMargins(left, top, right, bottom unit.MM) {
 	core.page.marginBottom = bottom
 }
 
-func (core *Core) DefaultFontSize() unit.PT {
-	return core.fontSize
+// PagesCount возвращает количество страниц на этапе построения документа равным очередности вызова функции.
+func (core *Core) PagesCount() int {
+	return core.page.count
 }
 
-func (core *Core) DefaultBorderSize() unit.PT {
-	return core.borderSize
-}
-
+// ReadImage читает изображение по заданному пути и сохраняет его с заданным псевдонимом. Изображение должно быть формата PNG.
 func (core *Core) ReadImage(path, alias string) error {
+	if alias == "" {
+		err := errors.New("псевдоним не может быть пустым")
+
+		return err
+	}
+
 	imageBytes, err := os.ReadFile(path)
 	if err != nil {
 		return err
@@ -137,7 +171,14 @@ func (core *Core) ReadImage(path, alias string) error {
 	return nil
 }
 
+// AddImage сохраняет бинарные данные изображения с заданным псевдонимом. Изображение должно быть формата PNG.
 func (core *Core) AddImage(data []byte, alias string) error {
+	if alias == "" {
+		err := errors.New("псевдоним не может быть пустым")
+
+		return err
+	}
+
 	img, err := image.New(alias, data)
 	if err != nil {
 		return err
@@ -148,29 +189,38 @@ func (core *Core) AddImage(data []byte, alias string) error {
 	return nil
 }
 
-func (core *Core) writeError(err error) {
+// defaultFontSize возвращает размер шрифта по-умолчанию.
+func (core *Core) defaultFontSize() unit.PT {
+	return core.fontSize
+}
+
+// defaultBorderSize возвращает размер тонкой линии по-умолчанию.
+func (core *Core) defaultBorderSize() unit.PT {
+	return core.borderSize
+}
+
+// setError устанавливает ошибку.
+func (core *Core) setError(err error) {
 	core.error = err
 }
 
+// err возвращает ошибку.
 func (core *Core) err() error {
 	return core.error
 }
 
+// bytes возвращает бинарные данные основного буфера и обнуляет его длину.
 func (core *Core) bytes() []byte {
 	defer core.mainBuffer.Reset()
 	return core.mainBuffer.Bytes()
 }
 
-func (core *Core) releaseBuffers() {
-	core.page.releaseHeader()
-	core.page.releaseWatermark()
-}
-
+// font возвращает шрифт по псевдониму.
 func (core *Core) font(alias string) *font.Font {
 	if len(core.fonts) == 0 {
 		err := errors.New("нет установленных шрифтов")
 
-		core.writeError(err)
+		core.setError(err)
 
 		return nil
 	}
@@ -179,7 +229,7 @@ func (core *Core) font(alias string) *font.Font {
 	if !ok {
 		err := fmt.Errorf("не найден шрифт с таким именем: %s", alias)
 
-		core.writeError(err)
+		core.setError(err)
 
 		return nil
 	}
@@ -187,12 +237,13 @@ func (core *Core) font(alias string) *font.Font {
 	return fnt
 }
 
+// image возвращает изображение по псевдониму.
 func (core *Core) image(alias string) *image.Image {
 	img, ok := core.images[alias]
 	if !ok {
 		err := fmt.Errorf("не найдено изображение с таким именем: %s", alias)
 
-		core.writeError(err)
+		core.setError(err)
 
 		return nil
 	}
@@ -224,13 +275,13 @@ func (core *Core) newPage() {
 	if core.page.headerBuffer != nil && core.page.headerBuffer.Len() > 0 {
 		_, err := core.page.buffer.Write(core.page.headerBuffer.Bytes())
 		if err != nil {
-			core.writeError(err)
+			core.setError(err)
 
 			return
 		}
 	}
 
-	core.pagesCount++
+	core.page.count++
 }
 
 func (core *Core) renderPage() {
@@ -241,7 +292,7 @@ func (core *Core) renderPage() {
 	if core.page.watermarkBuffer != nil && core.page.watermarkBuffer.Len() > 0 {
 		_, err := core.page.buffer.Write(core.page.watermarkBuffer.Bytes())
 		if err != nil {
-			core.writeError(err)
+			core.setError(err)
 
 			return
 		}
@@ -258,6 +309,7 @@ type page struct {
 	buffer          *buffer.Buffer
 	headerBuffer    *buffer.Buffer
 	watermarkBuffer *buffer.Buffer
+	count           int
 	width           unit.MM
 	height          unit.MM
 	marginLeft      unit.MM
@@ -324,6 +376,12 @@ func (p *page) releaseWatermark() {
 	if p.watermarkBuffer != nil {
 		p.watermarkBuffer.Reset()
 	}
+}
+
+func (p *page) reset() {
+	p.releaseWatermark()
+	p.releaseHeader()
+	p.count = 0
 }
 
 type compressor struct {
