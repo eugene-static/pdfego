@@ -384,9 +384,9 @@ func (dto DTO) shippingBody(block *pdf_craft.Block) {
 	table.Row().
 		LabelSpan("Товар (груз) передал / услуги, результаты работ, права сдал", 2)
 	table.Row(rowOptions).
-		Blank(dto.SenderChiefPosition, "").
+		Blank(dto.StoreKeeperPosition, "").
 		BlankEmpty().
-		Blank(dto.SenderChiefName, "").
+		Blank(dto.StoreKeeperName, "").
 		Paragraph("[12]")
 	table.Row().
 		Underscore("(должность)").
