@@ -37,7 +37,7 @@ func (core *Core) writeResources() {
 
 	type resource struct {
 		alias  string
-		objNum int64
+		objNum int
 	}
 
 	fontResources := make([]resource, 0, len(core.fonts))
@@ -89,7 +89,7 @@ func (core *Core) writeResources() {
 	b.EndObj()
 }
 
-func (core *Core) writeFont(f *font.Font, alias string) int64 {
+func (core *Core) writeFont(f *font.Font, alias string) int {
 	if core.err() != nil {
 		return 0
 	}
@@ -152,7 +152,7 @@ func (core *Core) writeFont(f *font.Font, alias string) int64 {
 	b.WriteFieldString("/Subtype", "/Type0")
 	b.WriteFieldString("/BaseFont", alias)
 	b.WriteFieldString("/Encoding", "/Identity-H")
-	b.WriteRefArray("/DescendantFonts", []int64{fontNum + 1})
+	b.WriteRefArray("/DescendantFonts", []int{fontNum + 1})
 	b.WriteRef("/ToUnicode", cMapObjNum)
 	b.CloseObjectParameters()
 	b.EndObj()
@@ -239,14 +239,14 @@ func (core *Core) writeFont(f *font.Font, alias string) int64 {
 	return fontNum
 }
 
-func (core *Core) writeImage(img *image.Image) int64 {
+func (core *Core) writeImage(img *image.Image) int {
 	if core.err() != nil {
 		return 0
 	}
 
 	b := core.mainBuffer
 
-	var alphaObjNum int64
+	var alphaObjNum int
 
 	alphaBytes, ok := img.Alpha()
 	if alphaBytes != nil {
@@ -348,8 +348,8 @@ func (core *Core) writePages() {
 	b.StartObj(objNumPages)
 	b.OpenObjectParameters()
 	b.WriteFieldString("/Type", "/Pages")
-	b.WriteRefArray("/Kids", core.pageObjs)
-	b.WriteFieldInt("/Count", len(core.pageObjs))
+	b.WriteRefArray("/Kids", core.page.objects)
+	b.WriteFieldInt("/Count", len(core.page.objects))
 	b.WriteFieldFloatArray("/MediaBox", []float64{0, 0, core.page.width.PT().Float64(), core.page.height.PT().Float64()})
 	b.CloseObjectParameters()
 	b.EndObj()
@@ -378,7 +378,7 @@ func (core *Core) writePage() {
 	b.OpenObjectParameters()
 
 	pageBytes := core.page.buffer.Bytes()
-	length := len(pageBytes)
+	length := core.page.buffer.Len()
 
 	if core.compress {
 		compressed, err := core.comp.compress(pageBytes)
@@ -407,7 +407,7 @@ func (core *Core) writePage() {
 	b.EndStream()
 	b.EndObj()
 
-	core.pageObjs = append(core.pageObjs, pageObjNum)
+	core.page.objects = append(core.page.objects, pageObjNum)
 }
 
 func (core *Core) writeFileHeader() {
@@ -419,7 +419,7 @@ func (core *Core) writeFileHeader() {
 	core.mainBuffer.WriteStringLn("%\x80\x80\x80\x80")
 }
 
-func (core *Core) writeInfo() int64 {
+func (core *Core) writeInfo() int {
 	if core.err() != nil {
 		return 0
 	}
@@ -439,7 +439,7 @@ func (core *Core) writeInfo() int64 {
 	return objNum
 }
 
-func (core *Core) writeCatalog() int64 {
+func (core *Core) writeCatalog() int {
 	if core.err() != nil {
 		return 0
 	}
@@ -480,7 +480,7 @@ func (core *Core) writeXref() int {
 	return xrefOffset
 }
 
-func (core *Core) writeTrailer(root, info int64) {
+func (core *Core) writeTrailer(root, info int) {
 	if core.err() != nil {
 		return
 	}

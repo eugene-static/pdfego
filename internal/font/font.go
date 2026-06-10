@@ -378,8 +378,8 @@ func (g *Glyph) Rune() uint16 {
 	return g.rune
 }
 
-func (g *Glyph) Advance() int64 {
-	return int64(g.advance.Round())
+func (g *Glyph) Advance() int {
+	return g.advance.Round()
 }
 
 type fontManager struct {

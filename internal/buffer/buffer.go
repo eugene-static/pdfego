@@ -134,7 +134,7 @@ func (b *Buffer) WriteGlyphWidthTable(glyphs []font.Glyph) {
 
 		if index == prev+1 {
 			b.writeString(" ")
-			b.writeInt64(advance)
+			b.writeInt(advance)
 
 			continue
 		}
@@ -145,7 +145,7 @@ func (b *Buffer) WriteGlyphWidthTable(glyphs []font.Glyph) {
 
 		b.writeUint16(index)
 		b.writeString(" [")
-		b.writeInt64(advance)
+		b.writeInt(advance)
 
 		prev = index
 	}
@@ -155,7 +155,7 @@ func (b *Buffer) WriteGlyphWidthTable(glyphs []font.Glyph) {
 
 func (b *Buffer) WriteGlyphCharDictionary(glyphs []font.Glyph) {
 	for chunk := range slices.Chunk(glyphs, 100) {
-		b.writeInt64(int64(len(chunk)))
+		b.writeInt(len(chunk))
 		b.writeString(" beginbfchar\n")
 
 		for _, gl := range chunk {
@@ -171,8 +171,8 @@ func (b *Buffer) WriteGlyphCharDictionary(glyphs []font.Glyph) {
 }
 
 // $N 0 obj
-func (b *Buffer) StartObj(objNum int64) {
-	b.writeInt64(objNum)
+func (b *Buffer) StartObj(objNum int) {
+	b.writeInt(objNum)
 	b.content.WriteString(" 0 obj\n")
 }
 
@@ -202,19 +202,19 @@ func (b *Buffer) EndStream() {
 }
 
 // /$Parent $N 0 R
-func (b *Buffer) WriteRef(field string, objNum int64) {
+func (b *Buffer) WriteRef(field string, objNum int) {
 	b.writeString(field)
 	b.space()
-	b.writeInt64(objNum)
+	b.writeInt(objNum)
 	b.writeString(" 0 R\n")
 }
 
 // /Kids [$N1 0 R $N2 0 R]
-func (b *Buffer) WriteRefArray(field string, objNums []int64) {
+func (b *Buffer) WriteRefArray(field string, objNums []int) {
 	b.writeString(field, " [")
 
 	for i := range objNums {
-		b.writeInt64(objNums[i])
+		b.writeInt(objNums[i])
 		b.writeString(" 0 R")
 		if i < len(objNums)-1 {
 			b.space()
@@ -242,7 +242,7 @@ func (b *Buffer) WriteFieldStringWithBrackets(field, value string) {
 // /Flag 4
 func (b *Buffer) WriteFieldInt(field string, value int) {
 	b.writeString(field, " ")
-	b.writeInt64(int64(value))
+	b.writeInt(value)
 	b.ln()
 }
 
@@ -251,7 +251,7 @@ func (b *Buffer) WriteFieldIntArray(field string, arr []int) {
 	b.writeString(field, " [")
 
 	for i := range arr {
-		b.writeInt64(int64(arr[i]))
+		b.writeInt(arr[i])
 		if i < len(arr)-1 {
 			b.space()
 		}
@@ -315,9 +315,9 @@ func (b *Buffer) writeFloat64(val float64) {
 	b.write(buf)
 }
 
-func (b *Buffer) writeInt64(val int64) {
+func (b *Buffer) writeInt(val int) {
 	buf := b.content.AvailableBuffer()
-	buf = strconv.AppendInt(buf, val, 10)
+	buf = strconv.AppendInt(buf, int64(val), 10)
 
 	b.write(buf)
 }

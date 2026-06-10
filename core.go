@@ -29,13 +29,12 @@ type Core struct {
 	images     map[string]*image.Image
 	comp       compressor
 	page       page
+	fontAlias  string
 	fontSize   unit.PT
 	borderSize unit.PT
-	// TODO: reset
-	offsets  []int
-	pageObjs []int64
-	compress bool
-	error    error
+	offsets    []int
+	compress   bool
+	error      error
 }
 
 // NewCore инициализирует новый экземпляр ядра конструктора с заранее заданной ориентацией страницы.
@@ -189,33 +188,27 @@ func (core *Core) AddImage(data []byte, alias string) error {
 	return nil
 }
 
-// defaultFontSize возвращает размер шрифта по-умолчанию.
 func (core *Core) defaultFontSize() unit.PT {
 	return core.fontSize
 }
 
-// defaultBorderSize возвращает размер тонкой линии по-умолчанию.
 func (core *Core) defaultBorderSize() unit.PT {
 	return core.borderSize
 }
 
-// setError устанавливает ошибку.
 func (core *Core) setError(err error) {
 	core.error = err
 }
 
-// err возвращает ошибку.
 func (core *Core) err() error {
 	return core.error
 }
 
-// bytes возвращает бинарные данные основного буфера и обнуляет его длину.
 func (core *Core) bytes() []byte {
-	defer core.mainBuffer.Reset()
+	defer core.reset()
 	return core.mainBuffer.Bytes()
 }
 
-// font возвращает шрифт по псевдониму.
 func (core *Core) font(alias string) *font.Font {
 	if len(core.fonts) == 0 {
 		err := errors.New("нет установленных шрифтов")
@@ -237,7 +230,6 @@ func (core *Core) font(alias string) *font.Font {
 	return fnt
 }
 
-// image возвращает изображение по псевдониму.
 func (core *Core) image(alias string) *image.Image {
 	img, ok := core.images[alias]
 	if !ok {
@@ -251,8 +243,8 @@ func (core *Core) image(alias string) *image.Image {
 	return img
 }
 
-func (core *Core) newObject() int64 {
-	objNum := int64(len(core.offsets))
+func (core *Core) newObject() int {
+	objNum := len(core.offsets)
 
 	xLen := core.mainBuffer.Len()
 
@@ -305,10 +297,17 @@ func (core *Core) renderPage() {
 	}
 }
 
+func (core *Core) reset() {
+	core.offsets = core.offsets[:3]
+	core.error = nil
+	core.mainBuffer.Reset()
+}
+
 type page struct {
 	buffer          *buffer.Buffer
 	headerBuffer    *buffer.Buffer
 	watermarkBuffer *buffer.Buffer
+	objects         []int
 	count           int
 	width           unit.MM
 	height          unit.MM
@@ -382,6 +381,7 @@ func (p *page) reset() {
 	p.releaseWatermark()
 	p.releaseHeader()
 	p.count = 0
+	p.objects = p.objects[:0]
 }
 
 type compressor struct {

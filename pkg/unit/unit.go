@@ -15,8 +15,6 @@ type MM float64
 
 type PT float64
 
-type PX float64
-
 func (pt PT) MM() MM {
 	return MM(pt / (dpi / inch))
 }
@@ -51,8 +49,6 @@ func (mm MM) Abs() (res MM) {
 	return res
 }
 
-func (mm MM) Neg() (res MM) {
-	res = -mm
-
-	return res
+func (mm MM) Neg() MM {
+	return -mm
 }
