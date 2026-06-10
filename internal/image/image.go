@@ -2,6 +2,7 @@ package image
 
 import (
 	"bytes"
+	"errors"
 	"image"
 	"image/png"
 )
@@ -30,18 +31,25 @@ func New(alias string, data []byte) (*Image, error) {
 
 	nrgba := image.NewRGBA(bounds)
 
-	for y := range height {
-		for x := range width {
-			r, g, b, a := img.At(x+bounds.Min.X, y+bounds.Min.Y).RGBA()
+	switch src := img.(type) {
+	case *image.NRGBA:
+		copy(nrgba.Pix, src.Pix)
+	case *image.RGBA:
+		for i := 0; i < len(src.Pix); i += 4 {
+			r, g, b, a := src.Pix[i], src.Pix[i+1], src.Pix[i+2], src.Pix[i+3]
+			if a != 0 && a != 255 {
+				r = uint8(uint32(r) * 255 / uint32(a))
+				g = uint8(uint32(g) * 255 / uint32(a))
+				b = uint8(uint32(b) * 255 / uint32(a))
+			}
 
-			// RGBA() возвращает значения в диапазоне [0, 65535], сужаем до 8 бит
-			off := nrgba.PixOffset(x, y)
-
-			nrgba.Pix[off+0] = uint8(r >> 8)
-			nrgba.Pix[off+1] = uint8(g >> 8)
-			nrgba.Pix[off+2] = uint8(b >> 8)
-			nrgba.Pix[off+3] = uint8(a >> 8)
+			nrgba.Pix[i] = r
+			nrgba.Pix[i+1] = g
+			nrgba.Pix[i+2] = b
+			nrgba.Pix[i+3] = a
 		}
+	default:
+		return nil, errors.New("неподдерживаемый тип изображения")
 	}
 
 	hasAlpha := false

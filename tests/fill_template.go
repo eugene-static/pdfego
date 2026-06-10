@@ -26,7 +26,12 @@ func prepareTemplate() (*pdf_craft.Core, error) {
 }
 
 func (dto DTO) fillTemplate(c *pdf_craft.Core) ([]byte, error) {
-	err := c.ReadImage("1691194.png", "1691194")
+	err := c.ReadImage("fisher.png", "fisher")
+	if err != nil {
+		return nil, err
+	}
+
+	err = c.ReadImage("newell.png", "gaben")
 	if err != nil {
 		return nil, err
 	}
@@ -318,17 +323,17 @@ func (dto DTO) signatories(block *pdf_craft.Block) {
 
 	table.Row().
 		Cell("Руководитель организации\nили иное уполномоченное лицо", pdf_craft.CellOptions{Height: 10, Align: "LB", Wrap: true}).
-		Image("1691194", pdf_craft.CellOptions{Align: "BC", Border: "b", PlaceHolder: "[электронная подпись]", OffsetV: 3}).
+		Blank("[электронная подпись]", "CB").
 		Blank(dto.OrgChiefName, "CB").
 		Cell("Главный бухгалтер\nили иное уполномоченное лицо", pdf_craft.CellOptions{Height: 10, Align: "LB", Wrap: true}).
 		Blank("[электронная подпись]", "CB").
 		Blank(dto.OrgAccountantName, "CB")
 	table.Row().
 		Skip().
-		Underscore("подпись").
+		Underscore("(подпись)").
 		Underscore("(Ф.И.О.)").
 		Skip().
-		Underscore("подпись").
+		Underscore("(подпись)").
 		Underscore("(Ф.И.О.)")
 	table.Row().
 		Cell("Индивидуальный предприниматель\nили иное уполномоченное лицо", pdf_craft.CellOptions{Height: 10, Align: "LB", Wrap: true}).
@@ -337,7 +342,7 @@ func (dto DTO) signatories(block *pdf_craft.Block) {
 		BlankEmpty(pdf_craft.CellOptions{Colspan: 3})
 	table.Row().
 		Skip().
-		Underscore("подпись").
+		Underscore("(подпись)").
 		Underscore("(Ф.И.О.)").
 		UnderscoreSpan("(основной государственный регистрационный номер индивидуального предпринимателя и дата присвоения такого номера)", 3)
 }
@@ -385,7 +390,7 @@ func (dto DTO) shippingBody(block *pdf_craft.Block) {
 		LabelSpan("Товар (груз) передал / услуги, результаты работ, права сдал", 2)
 	table.Row(rowOptions).
 		Blank(dto.StoreKeeperPosition, "").
-		BlankEmpty().
+		Blank("[электронная подпись]", "").
 		Blank(dto.StoreKeeperName, "").
 		Paragraph("[12]")
 	table.Row().
@@ -407,7 +412,7 @@ func (dto DTO) shippingBody(block *pdf_craft.Block) {
 		LabelSpan("Ответственный за правильность оформления факта хозяйственной жизни", 2)
 	table.Row(rowOptions).
 		Blank(dto.SenderChiefPosition, "").
-		BlankEmpty().
+		Blank("[электронная подпись]", "").
 		Blank(dto.SenderChiefName, "").
 		Paragraph("[15]")
 	table.Row().
@@ -442,7 +447,7 @@ func (dto DTO) shippingBody(block *pdf_craft.Block) {
 		LabelSpan("Товар (груз) получил / услуги, результаты работ, права принял", 2)
 	table.Row(rowOptions).
 		Blank(dto.RecipientPosition, "").
-		BlankEmpty().
+		Image("fisher", pdf_craft.CellOptions{Border: "b", Align: "BC", Scale: 2, OffsetV: 2, PlaceHolder: "Jeliy Fisher"}).
 		Blank(dto.RecipientName, "").
 		Paragraph("[17]")
 	table.Row().
@@ -464,7 +469,7 @@ func (dto DTO) shippingBody(block *pdf_craft.Block) {
 		LabelSpan("Ответственный за правильность оформления факта хозяйственной жизни", 2)
 	table.Row(rowOptions).
 		Blank(dto.RecipientChiefPosition, "").
-		BlankEmpty().
+		Image("gaben", pdf_craft.CellOptions{Border: "b", Align: "BC", Scale: 2, OffsetV: 2, PlaceHolder: "Gabe Newell"}).
 		Blank(dto.RecipientChiefName, "").
 		Paragraph("[20]")
 	table.Row().
@@ -506,9 +511,9 @@ func (dto DTO) watermark(block *pdf_craft.Block) {
 		Label("Подпись отправителя", opts).
 		Label("Квалифицированная ЭП", opts).
 		Label("номер КЭП 90379e6a254d4df79c93", opts).
-		Label("01.06.2026б 05:45", opts)
+		Label("01.06.2026, 05:45", opts)
 	table.Row().
 		Skip().
-		Label("Сарыкова Наталья Викторовна", opts).
-		Label("период действия с 19.08.2025 09:16\nпо 19.08.2026 09:26", pdf_craft.CellOptions{FontSize: 5, Wrap: true})
+		Label(dto.OrgAccountantName, opts).
+		Label("период действия с 01.01.2025 09:00\nпо 01.01.2028 09:00", pdf_craft.CellOptions{FontSize: 5, Wrap: true})
 }

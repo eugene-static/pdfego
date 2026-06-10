@@ -233,9 +233,9 @@ func (core *Core) font(alias string) *font.Font {
 func (core *Core) image(alias string) *image.Image {
 	img, ok := core.images[alias]
 	if !ok {
-		err := fmt.Errorf("не найдено изображение с таким именем: %s", alias)
-
-		core.setError(err)
+		//err := fmt.Errorf("не найдено изображение с таким именем: %s", alias)
+		//
+		//core.setError(err)
 
 		return nil
 	}
@@ -299,7 +299,7 @@ func (core *Core) renderPage() {
 
 func (core *Core) reset() {
 	core.offsets = core.offsets[:3]
-	core.error = nil
+	//core.error = nil
 	core.mainBuffer.Reset()
 }
 
