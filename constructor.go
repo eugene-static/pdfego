@@ -33,8 +33,8 @@ type Constructor struct {
 	dy        unit.MM
 }
 
-// New создает новый экземпляр конструктора с заданным ядром. Задает первую страницу макета.
-func New(core *Core) *Constructor {
+// NewConstructor создает новый экземпляр конструктора с заданным ядром. Задает первую страницу макета.
+func NewConstructor(core *Core) *Constructor {
 	core.startDocument()
 	core.newPage()
 	x0, y0 := core.page.x0y0()
@@ -416,7 +416,7 @@ type RepeaterApplier func(block *Block, section []string)
 //	}
 //
 //	func fill(core *Core) {
-//		constructor := New(core)
+//		constructor := NewConstructor(core)
 //
 //		employees := &Employees{
 //			Location: "Moscow",

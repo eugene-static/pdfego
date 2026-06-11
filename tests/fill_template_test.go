@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	pdf_craft "github.com/eugene-static/pdfego"
+	"github.com/eugene-static/pdfego"
 )
 
 func BenchmarkUPD_FillTemplate(b *testing.B) {
@@ -46,7 +46,7 @@ func TestUPD_FillTemplate(t *testing.T) {
 
 	bytes, err := template.fill()
 	if err != nil {
-		var imgError *pdf_craft.ImageNotFoundError
+		var imgError *pdfego.ImageNotFoundError
 
 		if !errors.As(err, &imgError) {
 			t.Fatal(err)

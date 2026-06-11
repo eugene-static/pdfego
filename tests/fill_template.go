@@ -7,10 +7,6 @@ import (
 	"github.com/eugene-static/pdfego/pkg/unit"
 )
 
-func f() {
-
-}
-
 func prepareTemplate() (*updTemplate, error) {
 	c := pdfego.NewCore(pdfego.Landscape)
 	c.SetMargins(3, 3, 3, 8)
@@ -40,7 +36,7 @@ func prepareTemplate() (*updTemplate, error) {
 	}
 
 	return &updTemplate{
-		constructor:  pdfego.New(c),
+		constructor:  pdfego.NewConstructor(c),
 		tableColumns: []unit.MM{21, 7, 83, 7, 7, 10, 15, 15, 20, 13, 13, 20, 20, 8, 10, 22},
 	}, nil
 }

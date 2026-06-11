@@ -24,6 +24,48 @@ PDFEGO — это конструктор файлов PDF на GO. Констр�
 Для таблицы существует разделение для отдельной настройки расстояния между строками и между колонками.
 
 ## Quick start
-```
 
+```go
+package main
+
+import (
+	"log"
+	"os"
+
+	"github.com/eugene-static/pdfego"
+)
+
+func main() {
+	core := pdfego.NewCore(pdfego.Landscape)
+
+	core.EnableCompression()
+
+	err := core.SetFontRegular("../fonts/LiberationSans-Regular.ttf")
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	constructor := pdfego.NewConstructor(core)
+
+	constructor.
+		Block().
+		Slot().
+		Table(1, pdfego.Columns(10)).
+		Row().
+		Cell("Поехали!")
+
+	bytes, err := constructor.Bytes()
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	file, err := os.Create("output.pdf")
+	if err != nil {
+		log.Fatal(err)
+	}
+	
+	defer file.Close()
+	
+	
+}
 ```
