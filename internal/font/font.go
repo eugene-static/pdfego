@@ -6,7 +6,7 @@ import (
 	"os"
 	"slices"
 
-	"github.com/eugene-static/pdf-craft/pkg/unit"
+	"github.com/eugene-static/pdfego/pkg/unit"
 	"golang.org/x/image/font/sfnt"
 	"golang.org/x/image/math/fixed"
 )

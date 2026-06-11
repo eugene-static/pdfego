@@ -3,12 +3,16 @@ package tests
 import (
 	"fmt"
 
-	"github.com/eugene-static/pdf-craft"
-	"github.com/eugene-static/pdf-craft/pkg/unit"
+	"github.com/eugene-static/pdfego"
+	"github.com/eugene-static/pdfego/pkg/unit"
 )
 
+func f() {
+
+}
+
 func prepareTemplate() (*updTemplate, error) {
-	c := pdf_craft.NewCore(pdf_craft.Landscape)
+	c := pdfego.NewCore(pdfego.Landscape)
 	c.SetMargins(3, 3, 3, 8)
 	c.SetDefaultFontSize(6)
 	c.SetDefaultBorderSize(0.3)
@@ -36,19 +40,19 @@ func prepareTemplate() (*updTemplate, error) {
 	}
 
 	return &updTemplate{
-		constructor:  pdf_craft.New(c),
+		constructor:  pdfego.New(c),
 		tableColumns: []unit.MM{21, 7, 83, 7, 7, 10, 15, 15, 20, 13, 13, 20, 20, 8, 10, 22},
 	}, nil
 }
 
 type updTemplate struct {
-	constructor  *pdf_craft.Constructor
+	constructor  *pdfego.Constructor
 	dto          DTO
 	tableColumns []unit.MM
 }
 
 func (tmpl *updTemplate) fill() ([]byte, error) {
-	tmpl.constructor.Watermark(pdf_craft.WatermarkOptions{Align: "RB"}).
+	tmpl.constructor.Watermark(pdfego.WatermarkOptions{Align: "RB"}).
 		Apply(tmpl.watermark)
 
 	tmpl.constructor.Paginate(0)
@@ -74,19 +78,19 @@ func (tmpl *updTemplate) fill() ([]byte, error) {
 	return tmpl.constructor.Bytes()
 }
 
-func (tmpl *updTemplate) header(block *pdf_craft.Block) {
-	table := block.Slot().Table(3, pdf_craft.Columns(15, 5))
+func (tmpl *updTemplate) header(block *pdfego.Block) {
+	table := block.Slot().Table(3, pdfego.Columns(15, 5))
 
 	table.Row().
-		Cell("Универсальный передаточный документ", pdf_craft.CellOptions{Height: 10, Wrap: true, Colspan: 2, Align: "LT"})
+		Cell("Универсальный передаточный документ", pdfego.CellOptions{Height: 10, Wrap: true, Colspan: 2, Align: "LT"})
 	table.Row().
-		Cell("Статус", pdf_craft.CellOptions{Height: 5, Align: "LM"}).
-		Cell("1", pdf_craft.CellOptions{Height: 5, Align: "CM", Border: "O"})
+		Cell("Статус", pdfego.CellOptions{Height: 5, Align: "LM"}).
+		Cell("1", pdfego.CellOptions{Height: 5, Align: "CM", Border: "O"})
 	table.Row().
-		Cell("1 - счет-фактура и\nпередаточный\nдокумент (акт)\n2 - передаточный\nдокумент (акт)", pdf_craft.CellOptions{Height: 15, Align: "LB", Colspan: 2, FontSize: 5, Wrap: true})
+		Cell("1 - счет-фактура и\nпередаточный\nдокумент (акт)\n2 - передаточный\nдокумент (акт)", pdfego.CellOptions{Height: 15, Align: "LB", Colspan: 2, FontSize: 5, Wrap: true})
 
 	numberDatesRequisitesSlot := block.Slot(
-		pdf_craft.NodeOptions{
+		pdfego.NodeOptions{
 			IndentH: 1,
 			Ledge:   5,
 			Border:  "L",
@@ -94,7 +98,7 @@ func (tmpl *updTemplate) header(block *pdf_craft.Block) {
 	)
 
 	numbersDates := numberDatesRequisitesSlot.Block(
-		pdf_craft.NodeOptions{
+		pdfego.NodeOptions{
 			IndentH: 1,
 		},
 	)
@@ -104,17 +108,17 @@ func (tmpl *updTemplate) header(block *pdf_craft.Block) {
 
 	table.Row().
 		Label("Счет-фактура").
-		Cell("№", pdf_craft.CellOptions{Align: "CB"}).
+		Cell("№", pdfego.CellOptions{Align: "CB"}).
 		Blank(tmpl.dto.SfNum, "").
-		Cell("от", pdf_craft.CellOptions{Align: "CB"}).
+		Cell("от", pdfego.CellOptions{Align: "CB"}).
 		Blank(tmpl.dto.SfDate, "").
 		Paragraph("(1)")
 
 	table.Row().
 		Label("Исправление").
-		Cell("№", pdf_craft.CellOptions{Align: "CB"}).
+		Cell("№", pdfego.CellOptions{Align: "CB"}).
 		BlankEmpty().
-		Cell("от", pdf_craft.CellOptions{Align: "CB"}).
+		Cell("от", pdfego.CellOptions{Align: "CB"}).
 		BlankEmpty().
 		Paragraph("(1а)")
 
@@ -123,10 +127,10 @@ func (tmpl *updTemplate) header(block *pdf_craft.Block) {
 
 	table.Row().
 		Cell("Приложение № 1 к постановлению Правительства Российской Федерации от 26 декабря 2011 г. № 1137\n(в редакции постановления Правительства Российской Федерации от 16 августа 2024 г. № 1096)",
-			pdf_craft.CellOptions{Align: "RT", FontSize: 5, Wrap: true})
+			pdfego.CellOptions{Align: "RT", FontSize: 5, Wrap: true})
 
 	requisites := numberDatesRequisitesSlot.Block(
-		pdf_craft.NodeOptions{
+		pdfego.NodeOptions{
 			IndentH: 1,
 			IndentV: 5,
 		},
@@ -171,7 +175,7 @@ func (tmpl *updTemplate) header(block *pdf_craft.Block) {
 				"при получении оплаты, частичной оплаты или иных платежей в счет\n"+
 				"предстоящих поставок товаров (выполнения работ, оказания услуг),",
 			2,
-			pdf_craft.CellOptions{Wrap: true},
+			pdfego.CellOptions{Wrap: true},
 		)
 	table.Row().
 		Label("передачи имущественных прав №:").
@@ -201,34 +205,34 @@ func (tmpl *updTemplate) header(block *pdf_craft.Block) {
 		Blank(tmpl.dto.CurrencyNameCode, "LB").
 		Paragraph("(7)")
 	table.Row().
-		Label("Идентификатор государственного контракта,\nдоговора (соглашения) (при наличии):", pdf_craft.CellOptions{Wrap: true}).
+		Label("Идентификатор государственного контракта,\nдоговора (соглашения) (при наличии):", pdfego.CellOptions{Wrap: true}).
 		BlankEmpty().
 		Paragraph("(8)")
 }
 
-func (tmpl *updTemplate) tableHeader(block *pdf_craft.Block) {
+func (tmpl *updTemplate) tableHeader(block *pdfego.Block) {
 	table := block.Slot().Table(2, tmpl.tableColumns)
 
-	optsBounded := pdf_craft.CellOptions{
+	optsBounded := pdfego.CellOptions{
 		Height: 15,
 		Border: "o",
 		Wrap:   true,
 	}
 
-	optsBoundedRS2 := pdf_craft.CellOptions{
+	optsBoundedRS2 := pdfego.CellOptions{
 		Rowspan: 2,
 		Border:  "o",
 		Wrap:    true,
 	}
 
-	optsBoundedCS2 := pdf_craft.CellOptions{
+	optsBoundedCS2 := pdfego.CellOptions{
 		Colspan: 2,
 		Border:  "o",
 		Wrap:    true,
 	}
 
 	table.Row().
-		Cell("Код\nтовара/работ, услуг", pdf_craft.CellOptions{Height: 10, Border: "tblR", Wrap: true, Rowspan: 2}).
+		Cell("Код\nтовара/работ, услуг", pdfego.CellOptions{Height: 10, Border: "tblR", Wrap: true, Rowspan: 2}).
 		Cell("№\nп/п", optsBoundedRS2).
 		Cell("Наименование товара\n(описание выполненных работ, оказанных услуг),\nимущественного права", optsBoundedRS2).
 		Cell("Код\nвида\nтовара", optsBoundedRS2).
@@ -250,12 +254,12 @@ func (tmpl *updTemplate) tableHeader(block *pdf_craft.Block) {
 		Cell("краткое\nнаимено-\nвание", optsBounded)
 }
 
-func (tmpl *updTemplate) tableNumberHeader(block *pdf_craft.Block) {
+func (tmpl *updTemplate) tableNumberHeader(block *pdfego.Block) {
 	table := block.Slot().
 		Table(1, tmpl.tableColumns)
 
 	table.Row().
-		Cell("А", pdf_craft.CellOptions{Align: "CM", Height: 3, Border: "tblR"}).
+		Cell("А", pdfego.CellOptions{Align: "CM", Height: 3, Border: "tblR"}).
 		Outlined("1").
 		Outlined("1а").
 		Outlined("1б").
@@ -273,45 +277,45 @@ func (tmpl *updTemplate) tableNumberHeader(block *pdf_craft.Block) {
 		Outlined("11")
 }
 
-func (tmpl *updTemplate) tableDetails(block *pdf_craft.Block, section []string) {
+func (tmpl *updTemplate) tableDetails(block *pdfego.Block, section []string) {
 	table := block.Slot().
 		Table(1, tmpl.tableColumns)
 
 	table.Row().
-		Cell(section[0], pdf_craft.CellOptions{ID: 0, Align: "CB", Border: "tblR"}).
-		Outlined(section[1], pdf_craft.CellOptions{ID: 1, Align: "CB"}).
-		Outlined(section[2], pdf_craft.CellOptions{ID: 2, Align: "LB", Wrap: true}).
-		Outlined(section[3], pdf_craft.CellOptions{ID: 3, Align: "CB"}).
-		Outlined(section[4], pdf_craft.CellOptions{ID: 4, Align: "RB"}).
-		Outlined(section[5], pdf_craft.CellOptions{ID: 5, Align: "LB"}).
-		Outlined(section[6], pdf_craft.CellOptions{ID: 6, Align: "RB"}).
-		Outlined(section[7], pdf_craft.CellOptions{ID: 7, Align: "RB"}).
-		Outlined(section[8], pdf_craft.CellOptions{ID: 8, Align: "RB"}).
-		Outlined(section[9], pdf_craft.CellOptions{ID: 9, Align: "RB"}).
-		Outlined(section[10], pdf_craft.CellOptions{ID: 10, Align: "RB"}).
-		Outlined(section[11], pdf_craft.CellOptions{ID: 11, Align: "RB"}).
-		Outlined(section[12], pdf_craft.CellOptions{ID: 12, Align: "RB"}).
-		Outlined(section[13], pdf_craft.CellOptions{ID: 13, Align: "RB"}).
-		Outlined(section[14], pdf_craft.CellOptions{ID: 14, Align: "LB"}).
-		Outlined(section[15], pdf_craft.CellOptions{ID: 15, Align: "LB"})
+		Cell(section[0], pdfego.CellOptions{ID: 0, Align: "CB", Border: "tblR"}).
+		Outlined(section[1], pdfego.CellOptions{ID: 1, Align: "CB"}).
+		Outlined(section[2], pdfego.CellOptions{ID: 2, Align: "LB", Wrap: true}).
+		Outlined(section[3], pdfego.CellOptions{ID: 3, Align: "CB"}).
+		Outlined(section[4], pdfego.CellOptions{ID: 4, Align: "RB"}).
+		Outlined(section[5], pdfego.CellOptions{ID: 5, Align: "LB"}).
+		Outlined(section[6], pdfego.CellOptions{ID: 6, Align: "RB"}).
+		Outlined(section[7], pdfego.CellOptions{ID: 7, Align: "RB"}).
+		Outlined(section[8], pdfego.CellOptions{ID: 8, Align: "RB"}).
+		Outlined(section[9], pdfego.CellOptions{ID: 9, Align: "RB"}).
+		Outlined(section[10], pdfego.CellOptions{ID: 10, Align: "RB"}).
+		Outlined(section[11], pdfego.CellOptions{ID: 11, Align: "RB"}).
+		Outlined(section[12], pdfego.CellOptions{ID: 12, Align: "RB"}).
+		Outlined(section[13], pdfego.CellOptions{ID: 13, Align: "RB"}).
+		Outlined(section[14], pdfego.CellOptions{ID: 14, Align: "LB"}).
+		Outlined(section[15], pdfego.CellOptions{ID: 15, Align: "LB"})
 }
 
-func (tmpl *updTemplate) tableFooter(block *pdf_craft.Block) {
+func (tmpl *updTemplate) tableFooter(block *pdfego.Block) {
 	table := block.Slot().
 		Table(1, tmpl.tableColumns)
 
 	table.Row().
-		Cell("", pdf_craft.CellOptions{Border: "tblR", Height: 3}).
-		Outlined("Всего к оплате:", pdf_craft.CellOptions{Align: "RB", Colspan: 7, Font: pdf_craft.FontBold}).
-		Outlined(tmpl.dto.AmountWithoutVatTotal, pdf_craft.CellOptions{Align: "RB"}).
-		Outlined("X", pdf_craft.CellOptions{Align: "CB", Colspan: 2, Font: pdf_craft.FontBold}).
-		Outlined(tmpl.dto.AmountVatTotal, pdf_craft.CellOptions{Align: "RB"}).
-		Outlined(tmpl.dto.AmountWithVatTotal, pdf_craft.CellOptions{Align: "RB"}).
-		Outlined("", pdf_craft.CellOptions{Colspan: 3})
+		Cell("", pdfego.CellOptions{Border: "tblR", Height: 3}).
+		Outlined("Всего к оплате:", pdfego.CellOptions{Align: "RB", Colspan: 7, Font: pdfego.FontBold}).
+		Outlined(tmpl.dto.AmountWithoutVatTotal, pdfego.CellOptions{Align: "RB"}).
+		Outlined("X", pdfego.CellOptions{Align: "CB", Colspan: 2, Font: pdfego.FontBold}).
+		Outlined(tmpl.dto.AmountVatTotal, pdfego.CellOptions{Align: "RB"}).
+		Outlined(tmpl.dto.AmountWithVatTotal, pdfego.CellOptions{Align: "RB"}).
+		Outlined("", pdfego.CellOptions{Colspan: 3})
 }
 
-func (tmpl *updTemplate) signatories(block *pdf_craft.Block) {
-	table := block.Slot(pdf_craft.NodeOptions{
+func (tmpl *updTemplate) signatories(block *pdfego.Block) {
+	table := block.Slot(pdfego.NodeOptions{
 		IndentH: 21,
 		Border:  "LB",
 		Ledge:   3,
@@ -319,13 +323,13 @@ func (tmpl *updTemplate) signatories(block *pdf_craft.Block) {
 		Table(
 			4,
 			[]unit.MM{38, 47, 47, 38, 47, 47},
-			pdf_craft.TableOptions{SpacingH: 1, IndentH: 1})
+			pdfego.TableOptions{SpacingH: 1, IndentH: 1})
 
 	table.Row().
-		Cell("Руководитель организации\nили иное уполномоченное лицо", pdf_craft.CellOptions{Height: 10, Align: "LB", Wrap: true}).
+		Cell("Руководитель организации\nили иное уполномоченное лицо", pdfego.CellOptions{Height: 10, Align: "LB", Wrap: true}).
 		Blank("[электронная подпись]", "CB").
 		Blank(tmpl.dto.OrgChiefName, "CB").
-		Cell("Главный бухгалтер\nили иное уполномоченное лицо", pdf_craft.CellOptions{Height: 10, Align: "LB", Wrap: true}).
+		Cell("Главный бухгалтер\nили иное уполномоченное лицо", pdfego.CellOptions{Height: 10, Align: "LB", Wrap: true}).
 		Blank("[электронная подпись]", "CB").
 		Blank(tmpl.dto.OrgAccountantName, "CB")
 	table.Row().
@@ -336,10 +340,10 @@ func (tmpl *updTemplate) signatories(block *pdf_craft.Block) {
 		Underscore("(подпись)").
 		Underscore("(Ф.И.О.)")
 	table.Row().
-		Cell("Индивидуальный предприниматель\nили иное уполномоченное лицо", pdf_craft.CellOptions{Height: 10, Align: "LB", Wrap: true}).
+		Cell("Индивидуальный предприниматель\nили иное уполномоченное лицо", pdfego.CellOptions{Height: 10, Align: "LB", Wrap: true}).
 		BlankEmpty().
 		BlankEmpty().
-		BlankEmpty(pdf_craft.CellOptions{Colspan: 3})
+		BlankEmpty(pdfego.CellOptions{Colspan: 3})
 	table.Row().
 		Skip().
 		Underscore("(подпись)").
@@ -347,10 +351,10 @@ func (tmpl *updTemplate) signatories(block *pdf_craft.Block) {
 		UnderscoreSpan("(основной государственный регистрационный номер индивидуального предпринимателя и дата присвоения такого номера)", 3)
 }
 
-func (tmpl *updTemplate) shippingHeaders(block *pdf_craft.Block) {
+func (tmpl *updTemplate) shippingHeaders(block *pdfego.Block) {
 	table := block.Slot().
 		Table(4, []unit.MM{60, 224, 10},
-			pdf_craft.TableOptions{
+			pdfego.TableOptions{
 				IndentV: 5,
 			},
 		)
@@ -371,17 +375,17 @@ func (tmpl *updTemplate) shippingHeaders(block *pdf_craft.Block) {
 		Underscore("(транспортная накладная, поручение экспедитору, экспедиторская / складская расписка и др. / масса нетто/ брутто груза, если не приведены ссылки на транспортные документы, содержащие эти сведения)")
 }
 
-func (tmpl *updTemplate) shippingBody(block *pdf_craft.Block) {
+func (tmpl *updTemplate) shippingBody(block *pdfego.Block) {
 	columns := []unit.MM{44, 44, 44, 10}
-	rowOptions := pdf_craft.RowOptions{MinHeight: 4}
+	rowOptions := pdfego.RowOptions{MinHeight: 4}
 
 	table := block.Slot(
-		pdf_craft.NodeOptions{
+		pdfego.NodeOptions{
 			IndentV: 3,
 		},
 	).
 		Table(14, columns,
-			pdf_craft.TableOptions{
+			pdfego.TableOptions{
 				SpacingH: 1,
 			},
 		)
@@ -430,14 +434,14 @@ func (tmpl *updTemplate) shippingBody(block *pdf_craft.Block) {
 		Cell("М.П.")
 
 	table = block.Slot(
-		pdf_craft.NodeOptions{
+		pdfego.NodeOptions{
 			IndentV: 3,
 			IndentH: 1,
 			Border:  "L",
 		},
 	).
 		Table(14, columns,
-			pdf_craft.TableOptions{
+			pdfego.TableOptions{
 				SpacingH: 1,
 				IndentH:  3,
 			},
@@ -447,7 +451,7 @@ func (tmpl *updTemplate) shippingBody(block *pdf_craft.Block) {
 		LabelSpan("Товар (груз) получил / услуги, результаты работ, права принял", 2)
 	table.Row(rowOptions).
 		Blank(tmpl.dto.RecipientPosition, "").
-		Image("fisher", pdf_craft.CellOptions{Border: "b", Align: "BC", Scale: 2, OffsetV: 2, PlaceHolder: "Jeliy Fisher"}).
+		Image("fisher", pdfego.CellOptions{Border: "b", Align: "BC", Scale: 2, OffsetV: 2, PlaceHolder: "Jeliy Fisher"}).
 		Blank(tmpl.dto.RecipientName, "").
 		Paragraph("[17]")
 	table.Row().
@@ -469,7 +473,7 @@ func (tmpl *updTemplate) shippingBody(block *pdf_craft.Block) {
 		LabelSpan("Ответственный за правильность оформления факта хозяйственной жизни", 2)
 	table.Row(rowOptions).
 		Blank(tmpl.dto.RecipientChiefPosition, "").
-		Image("gaben", pdf_craft.CellOptions{Border: "b", Align: "BC", Scale: 2, OffsetV: 2, PlaceHolder: "Gabe Newell"}).
+		Image("gaben", pdfego.CellOptions{Border: "b", Align: "BC", Scale: 2, OffsetV: 2, PlaceHolder: "Gabe Newell"}).
 		Blank(tmpl.dto.RecipientChiefName, "").
 		Paragraph("[20]")
 	table.Row().
@@ -487,18 +491,18 @@ func (tmpl *updTemplate) shippingBody(block *pdf_craft.Block) {
 		Cell("М.П.")
 }
 
-func (tmpl *updTemplate) watermark(block *pdf_craft.Block) {
+func (tmpl *updTemplate) watermark(block *pdfego.Block) {
 	table := block.Slot().
 		Table(3, []unit.MM{40, 40, 40, 40},
-			pdf_craft.TableOptions{
+			pdfego.TableOptions{
 				SpacingH:    1,
 				SpacingV:    1,
 				Border:      "O",
-				TextColor:   pdf_craft.ColorDarkBlue,
-				BorderColor: pdf_craft.ColorDarkBlue,
+				TextColor:   pdfego.ColorDarkBlue,
+				BorderColor: pdfego.ColorDarkBlue,
 			})
 
-	opts := pdf_craft.CellOptions{
+	opts := pdfego.CellOptions{
 		FontSize: 5,
 	}
 
@@ -515,5 +519,5 @@ func (tmpl *updTemplate) watermark(block *pdf_craft.Block) {
 	table.Row().
 		Skip().
 		Label(tmpl.dto.Certificate.SignerName, opts).
-		Label(fmt.Sprintf("период действия с %s\nпо %s", tmpl.dto.Certificate.ValidityPeriodFrom, tmpl.dto.Certificate.ValidityPeriodTo), pdf_craft.CellOptions{FontSize: 5, Wrap: true})
+		Label(fmt.Sprintf("период действия с %s\nпо %s", tmpl.dto.Certificate.ValidityPeriodFrom, tmpl.dto.Certificate.ValidityPeriodTo), pdfego.CellOptions{FontSize: 5, Wrap: true})
 }

@@ -1,4 +1,4 @@
-package pdf_craft
+package pdfego
 
 // Color применяется для обозначения цвета текста и границ.
 type Color uint32

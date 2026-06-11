@@ -5,8 +5,8 @@ import (
 	"slices"
 	"strconv"
 
-	"github.com/eugene-static/pdf-craft/internal/font"
-	"github.com/eugene-static/pdf-craft/pkg/unit"
+	"github.com/eugene-static/pdfego/internal/font"
+	"github.com/eugene-static/pdfego/pkg/unit"
 )
 
 const DefaultSize = 1 << 16

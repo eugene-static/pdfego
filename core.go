@@ -1,4 +1,4 @@
-package pdf_craft
+package pdfego
 
 import (
 	"compress/zlib"
@@ -6,10 +6,10 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/eugene-static/pdf-craft/internal/buffer"
-	"github.com/eugene-static/pdf-craft/internal/font"
-	"github.com/eugene-static/pdf-craft/internal/image"
-	"github.com/eugene-static/pdf-craft/pkg/unit"
+	"github.com/eugene-static/pdfego/internal/buffer"
+	"github.com/eugene-static/pdfego/internal/font"
+	"github.com/eugene-static/pdfego/internal/image"
+	"github.com/eugene-static/pdfego/pkg/unit"
 )
 
 const (

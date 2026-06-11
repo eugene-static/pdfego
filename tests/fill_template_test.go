@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	pdf_craft "github.com/eugene-static/pdf-craft"
+	pdf_craft "github.com/eugene-static/pdfego"
 )
 
 func BenchmarkUPD_FillTemplate(b *testing.B) {

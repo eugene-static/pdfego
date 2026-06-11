@@ -1,8 +1,8 @@
-package pdf_craft
+package pdfego
 
 import (
-	"github.com/eugene-static/pdf-craft/internal/buffer"
-	"github.com/eugene-static/pdf-craft/pkg/unit"
+	"github.com/eugene-static/pdfego/internal/buffer"
+	"github.com/eugene-static/pdfego/pkg/unit"
 )
 
 const (
