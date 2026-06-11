@@ -53,9 +53,11 @@ func New(alias string, data []byte) (*Image, error) {
 	}
 
 	hasAlpha := false
+
 	for i := 3; i < len(nrgba.Pix); i += 4 {
 		if nrgba.Pix[i] != 255 {
 			hasAlpha = true
+
 			break
 		}
 	}

@@ -45,7 +45,7 @@ type DTO struct {
 	RecipientChiefName     string
 	DocReceiveDate         string
 
-	OrgSignImage string
+	Certificate Certificate
 
 	Details        []Detail
 	DetailsOrdered []string
@@ -70,7 +70,15 @@ type Detail struct {
 	Gtd              string
 }
 
-func NewDTO(detailsNum int) DTO {
+type Certificate struct {
+	SignerName         string
+	SignDate           string
+	KEP                string
+	ValidityPeriodFrom string
+	ValidityPeriodTo   string
+}
+
+func newDTO(detailsNum int) DTO {
 	details := []Detail{
 		{
 			Number:           "1",
@@ -93,6 +101,14 @@ func NewDTO(detailsNum int) DTO {
 	}
 
 	details = slices.Repeat(details, detailsNum)
+
+	cert := Certificate{
+		SignerName:         "Michael Gary Scott",
+		SignDate:           time.Now().Format("02-01-2006, 15:04"),
+		KEP:                "90379e6a254d4df79c93",
+		ValidityPeriodFrom: "01.01.2025 09:00",
+		ValidityPeriodTo:   "01.01.2028 09:00",
+	}
 
 	upd := DTO{
 		Status:                       "1",
@@ -126,7 +142,7 @@ func NewDTO(detailsNum int) DTO {
 		RecipientChiefPosition:       "Генеральный директор",
 		RecipientChiefName:           "Gabe Newell",
 		DocReceiveDate:               "",
-		OrgSignImage:                 "/1691194.png",
+		Certificate:                  cert,
 		Details:                      details,
 		DetailsOrdered:               make([]string, 16),
 	}

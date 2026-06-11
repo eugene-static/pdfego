@@ -127,9 +127,9 @@ func New(path, alias string) (*Font, error) {
 		rawData: fontBytes,
 		metrics: metrics,
 		manager: fontManager{
-			faceBuffer:     buf,
-			glyphsCache:    make(map[rune]Glyph),
-			glyphFastCache: make([]Glyph, rusRunesLimitIndex),
+			faceBuffer:      buf,
+			glyphsSlowCache: make(map[rune]Glyph),
+			glyphsFastCache: make([]Glyph, rusRunesLimitIndex),
 		},
 	}
 
@@ -149,13 +149,7 @@ func (f *Font) CapHeight(size unit.PT) unit.PT {
 }
 
 func (f *Font) GID(r rune) uint16 {
-	if r < rusRunesLimitIndex {
-		gl := f.manager.glyphFastCache[r]
-
-		return gl.Index()
-	}
-
-	gl, ok := f.manager.glyphsCache[r]
+	gl, ok := f.manager.glyph(r)
 	if ok {
 		return gl.Index()
 	}
@@ -168,7 +162,7 @@ func (f *Font) Glyphs() []Glyph {
 		return f.manager.glyphs
 	}
 
-	glyphs := slices.SortedFunc(maps.Values(f.manager.glyphsCache), func(g Glyph, g2 Glyph) int {
+	glyphs := slices.SortedFunc(maps.Values(f.manager.glyphsSlowCache), func(g Glyph, g2 Glyph) int {
 		return cmp.Compare(g.index, g2.index)
 	})
 
@@ -214,18 +208,10 @@ func (f *Font) MeasureText(fontSize unit.PT, text []rune, start, end int) unit.P
 	for i := start; i < end; i++ {
 		char := text[i]
 
-		if char < 1200 {
-			gl := f.manager.glyphFastCache[char]
-
-			if gl.advance > 0 {
-				advance += gl.advance
-				continue
-			}
-		}
-
-		gl, ok := f.manager.glyphsCache[text[i]]
+		gl, ok := f.manager.glyph(char)
 		if !ok {
 			advance += defaultAdvance
+
 			continue
 		}
 
@@ -334,11 +320,11 @@ func (f *Font) SplitText(text string, size unit.PT, width unit.MM, buf []Text) [
 }
 
 func (f *Font) saveRune(r rune) {
-	if r < rusRunesLimitIndex && f.manager.glyphFastCache[r].rune > 0 {
+	if r < rusRunesLimitIndex && f.manager.glyphsFastCache[r].rune > 0 {
 		return
 	}
 
-	_, ok := f.manager.glyphsCache[r]
+	_, ok := f.manager.glyphsSlowCache[r]
 	if ok {
 		return
 	}
@@ -383,29 +369,39 @@ func (g *Glyph) Advance() int {
 }
 
 type fontManager struct {
-	faceBuffer     *sfnt.Buffer
-	textBuffer     []rune
-	glyphs         []Glyph
-	glyphFastCache []Glyph
-	glyphsCache    map[rune]Glyph
-	dirtyFlag      bool
+	faceBuffer      *sfnt.Buffer
+	textBuffer      []rune
+	glyphs          []Glyph
+	glyphsFastCache []Glyph
+	glyphsSlowCache map[rune]Glyph
+	dirtyFlag       bool
 }
 
 func (mgr *fontManager) addGlyph(r rune, gid sfnt.GlyphIndex, advance fixed.Int26_6) {
-	if r < 1200 {
-		mgr.glyphFastCache[r].rune = uint16(r)
-		mgr.glyphFastCache[r].index = gid
-		mgr.glyphFastCache[r].advance = advance
-		mgr.glyphsCache[r] = mgr.glyphFastCache[r]
+	if r < rusRunesLimitIndex {
+		mgr.glyphsFastCache[r].rune = uint16(r)
+		mgr.glyphsFastCache[r].index = gid
+		mgr.glyphsFastCache[r].advance = advance
+		mgr.glyphsSlowCache[r] = mgr.glyphsFastCache[r]
 
 		return
 	}
 
-	mgr.glyphsCache[r] = Glyph{
+	mgr.glyphsSlowCache[r] = Glyph{
 		rune:    uint16(r),
 		index:   gid,
 		advance: advance,
 	}
+}
+
+func (mgr *fontManager) glyph(r rune) (Glyph, bool) {
+	if r < rusRunesLimitIndex {
+		return mgr.glyphsFastCache[r], true
+	}
+
+	gl, ok := mgr.glyphsSlowCache[r]
+
+	return gl, ok
 }
 
 func (mgr *fontManager) wrapSymbols(index int) bool {
@@ -432,6 +428,7 @@ func (s *Text) Width() unit.MM {
 	return s.width
 }
 
-func Padding(fontSize unit.PT) unit.PT {
+// Margin -- расстояние от текста до границ объекта, в котором он расположен.
+func Margin(fontSize unit.PT) unit.PT {
 	return fontSize / 7
 }

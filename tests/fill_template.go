@@ -1,16 +1,19 @@
 package tests
 
 import (
+	"fmt"
+
 	"github.com/eugene-static/pdf-craft"
 	"github.com/eugene-static/pdf-craft/pkg/unit"
 )
 
-func prepareTemplate() (*pdf_craft.Core, error) {
+func prepareTemplate() (*updTemplate, error) {
 	c := pdf_craft.NewCore(pdf_craft.Landscape)
 	c.SetMargins(3, 3, 3, 8)
 	c.SetDefaultFontSize(6)
 	c.SetDefaultBorderSize(0.3)
-	c.WithCompression()
+	c.EnableCompression()
+	c.IgnoreImageNotFound()
 
 	err := c.SetFontRegular("../fonts/LiberationSans-Regular.ttf")
 	if err != nil {
@@ -22,11 +25,7 @@ func prepareTemplate() (*pdf_craft.Core, error) {
 		return nil, err
 	}
 
-	return c, nil
-}
-
-func (dto DTO) fillTemplate(c *pdf_craft.Core) ([]byte, error) {
-	err := c.ReadImage("fisher.png", "fisher")
+	err = c.ReadImage("fisher.png", "fisher")
 	if err != nil {
 		return nil, err
 	}
@@ -36,37 +35,46 @@ func (dto DTO) fillTemplate(c *pdf_craft.Core) ([]byte, error) {
 		return nil, err
 	}
 
-	constructor := pdf_craft.New(c)
-
-	tableColumns := []unit.MM{21, 7, 83, 7, 7, 10, 15, 15, 20, 13, 13, 20, 20, 8, 10, 22}
-
-	constructor.Watermark(pdf_craft.WatermarkOptions{Align: "RB"}).
-		Apply(dto.watermark)
-
-	constructor.Paginate(0)
-
-	constructor.
-		Build(dto.header).
-		Build(tableHeader(tableColumns))
-
-	constructor.Header().
-		Apply(tableNumberHeader(tableColumns))
-
-	constructor.Repeater(dto).
-		Repeat(tableDetails(tableColumns))
-
-	constructor.ReleaseHeader()
-
-	constructor.
-		Build(dto.tableFooter(tableColumns)).
-		Build(dto.signatories).
-		Build(dto.shippingHeaders).
-		Build(dto.shippingBody)
-
-	return constructor.Bytes()
+	return &updTemplate{
+		constructor:  pdf_craft.New(c),
+		tableColumns: []unit.MM{21, 7, 83, 7, 7, 10, 15, 15, 20, 13, 13, 20, 20, 8, 10, 22},
+	}, nil
 }
 
-func (dto DTO) header(block *pdf_craft.Block) {
+type updTemplate struct {
+	constructor  *pdf_craft.Constructor
+	dto          DTO
+	tableColumns []unit.MM
+}
+
+func (tmpl *updTemplate) fill() ([]byte, error) {
+	tmpl.constructor.Watermark(pdf_craft.WatermarkOptions{Align: "RB"}).
+		Apply(tmpl.watermark)
+
+	tmpl.constructor.Paginate(0)
+
+	tmpl.constructor.
+		Build(tmpl.header).
+		Build(tmpl.tableHeader)
+
+	tmpl.constructor.Header().
+		Apply(tmpl.tableNumberHeader)
+
+	tmpl.constructor.Repeater(tmpl.dto).
+		Repeat(tmpl.tableDetails)
+
+	tmpl.constructor.ReleaseHeader()
+
+	tmpl.constructor.
+		Build(tmpl.tableFooter).
+		Build(tmpl.signatories).
+		Build(tmpl.shippingHeaders).
+		Build(tmpl.shippingBody)
+
+	return tmpl.constructor.Bytes()
+}
+
+func (tmpl *updTemplate) header(block *pdf_craft.Block) {
 	table := block.Slot().Table(3, pdf_craft.Columns(15, 5))
 
 	table.Row().
@@ -97,9 +105,9 @@ func (dto DTO) header(block *pdf_craft.Block) {
 	table.Row().
 		Label("Счет-фактура").
 		Cell("№", pdf_craft.CellOptions{Align: "CB"}).
-		Blank(dto.SfNum, "").
+		Blank(tmpl.dto.SfNum, "").
 		Cell("от", pdf_craft.CellOptions{Align: "CB"}).
-		Blank(dto.SfDate, "").
+		Blank(tmpl.dto.SfDate, "").
 		Paragraph("(1)")
 
 	table.Row().
@@ -131,31 +139,31 @@ func (dto DTO) header(block *pdf_craft.Block) {
 
 	table.Row().
 		LabelHead("Продавец:").
-		Form(dto.OrgPrintName, "LB").
+		Form(tmpl.dto.OrgPrintName, "LB").
 		Paragraph("(2)")
 	table.Row().
 		Label("Адрес:").
-		Form(dto.OrgPrintAddress, "LB").
+		Form(tmpl.dto.OrgPrintAddress, "LB").
 		Paragraph("(2а)")
 	table.Row().
 		Label("ИНН/КПП продавца:").
-		Blank(dto.OrgInnKpp, "LB").
+		Blank(tmpl.dto.OrgInnKpp, "LB").
 		Paragraph("(2б)")
 	table.Row().
 		Label("Грузоотправитель и его адрес:").
-		Form(dto.ShipperPrintNameAddress, "LB").
+		Form(tmpl.dto.ShipperPrintNameAddress, "LB").
 		Paragraph("(3)")
 	table.Row().
 		Label("Грузополучатель и его адрес:").
-		Form(dto.ConsigneePrintNameAddress, "LB").
+		Form(tmpl.dto.ConsigneePrintNameAddress, "LB").
 		Paragraph("(4)")
 	table.Row().
 		Label("К платежно-расчетному документу №:").
-		Blank(dto.PaymentAndSettlementDocument, "LB").
+		Blank(tmpl.dto.PaymentAndSettlementDocument, "LB").
 		Paragraph("(5)")
 	table.Row().
 		Label("Документ об отгрузке:").
-		Form(dto.ShippingDocuments, "LB").
+		Form(tmpl.dto.ShippingDocuments, "LB").
 		Paragraph("(5а)")
 	table.Row().
 		LabelSpan(
@@ -178,19 +186,19 @@ func (dto DTO) header(block *pdf_craft.Block) {
 
 	table.Row().
 		LabelHead("Покупатель:").
-		Form(dto.SupplierPrintName, "LB").
+		Form(tmpl.dto.SupplierPrintName, "LB").
 		Paragraph("(6)")
 	table.Row().
 		Label("Адрес:").
-		Form(dto.SupplierPrintAddress, "LB").
+		Form(tmpl.dto.SupplierPrintAddress, "LB").
 		Paragraph("(6а)")
 	table.Row().
 		Label("ИНН/КПП покупателя:").
-		Blank(dto.SupplierInnKpp, "LB").
+		Blank(tmpl.dto.SupplierInnKpp, "LB").
 		Paragraph("(6б)")
 	table.Row().
 		Label("Валюта: наименование, код:").
-		Blank(dto.CurrencyNameCode, "LB").
+		Blank(tmpl.dto.CurrencyNameCode, "LB").
 		Paragraph("(7)")
 	table.Row().
 		Label("Идентификатор государственного контракта,\nдоговора (соглашения) (при наличии):", pdf_craft.CellOptions{Wrap: true}).
@@ -198,119 +206,111 @@ func (dto DTO) header(block *pdf_craft.Block) {
 		Paragraph("(8)")
 }
 
-func tableHeader(columns []unit.MM) func(block *pdf_craft.Block) {
-	return func(block *pdf_craft.Block) {
-		table := block.Slot().Table(2, columns)
+func (tmpl *updTemplate) tableHeader(block *pdf_craft.Block) {
+	table := block.Slot().Table(2, tmpl.tableColumns)
 
-		optsBounded := pdf_craft.CellOptions{
-			Height: 15,
-			Border: "o",
-			Wrap:   true,
-		}
-
-		optsBoundedRS2 := pdf_craft.CellOptions{
-			Rowspan: 2,
-			Border:  "o",
-			Wrap:    true,
-		}
-
-		optsBoundedCS2 := pdf_craft.CellOptions{
-			Colspan: 2,
-			Border:  "o",
-			Wrap:    true,
-		}
-
-		table.Row().
-			Cell("Код\nтовара/работ, услуг", pdf_craft.CellOptions{Height: 10, Border: "tblR", Wrap: true, Rowspan: 2}).
-			Cell("№\nп/п", optsBoundedRS2).
-			Cell("Наименование товара\n(описание выполненных работ, оказанных услуг),\nимущественного права", optsBoundedRS2).
-			Cell("Код\nвида\nтовара", optsBoundedRS2).
-			Cell("Единица\nизмерения", optsBoundedCS2).
-			Cell("Количество\n(объем)", optsBoundedRS2).
-			Cell("Цена\n(тариф) за\nединицу\nизмерения", optsBoundedRS2).
-			Cell("Стоимость\nтоваров (работ,\nуслуг),\nимущественных\nправ без налога -\nвсего", optsBoundedRS2).
-			Cell("В том числе\nсумма\nакциза", optsBoundedRS2).
-			Cell("Налоговая\nставка", optsBoundedRS2).
-			Cell("Сумма налога,\nпредъявляемая\nпокупателю", optsBoundedRS2).
-			Cell("Стоимость\nтоваров (работ,\nуслуг),\nимущественных\nправ с налогом -\nвсего", optsBoundedRS2).
-			Cell("Страна\nпроисхождения\nтовара", optsBoundedCS2).
-			Cell("Регистрационный\nномер декларации\nна товары или\nрегистрационный\nномер партии\nтовара,\nподлежащего\nпрослеживаемости", optsBoundedRS2)
-
-		table.Row().
-			Cell("код", optsBounded).
-			Cell("условное\nобозна-\nчение\n(нацио-\nнальное)", optsBounded).
-			Cell("цифро-\nвой\nкод", optsBounded).
-			Cell("краткое\nнаимено-\nвание", optsBounded)
+	optsBounded := pdf_craft.CellOptions{
+		Height: 15,
+		Border: "o",
+		Wrap:   true,
 	}
+
+	optsBoundedRS2 := pdf_craft.CellOptions{
+		Rowspan: 2,
+		Border:  "o",
+		Wrap:    true,
+	}
+
+	optsBoundedCS2 := pdf_craft.CellOptions{
+		Colspan: 2,
+		Border:  "o",
+		Wrap:    true,
+	}
+
+	table.Row().
+		Cell("Код\nтовара/работ, услуг", pdf_craft.CellOptions{Height: 10, Border: "tblR", Wrap: true, Rowspan: 2}).
+		Cell("№\nп/п", optsBoundedRS2).
+		Cell("Наименование товара\n(описание выполненных работ, оказанных услуг),\nимущественного права", optsBoundedRS2).
+		Cell("Код\nвида\nтовара", optsBoundedRS2).
+		Cell("Единица\nизмерения", optsBoundedCS2).
+		Cell("Количество\n(объем)", optsBoundedRS2).
+		Cell("Цена\n(тариф) за\nединицу\nизмерения", optsBoundedRS2).
+		Cell("Стоимость\nтоваров (работ,\nуслуг),\nимущественных\nправ без налога -\nвсего", optsBoundedRS2).
+		Cell("В том числе\nсумма\nакциза", optsBoundedRS2).
+		Cell("Налоговая\nставка", optsBoundedRS2).
+		Cell("Сумма налога,\nпредъявляемая\nпокупателю", optsBoundedRS2).
+		Cell("Стоимость\nтоваров (работ,\nуслуг),\nимущественных\nправ с налогом -\nвсего", optsBoundedRS2).
+		Cell("Страна\nпроисхождения\nтовара", optsBoundedCS2).
+		Cell("Регистрационный\nномер декларации\nна товары или\nрегистрационный\nномер партии\nтовара,\nподлежащего\nпрослеживаемости", optsBoundedRS2)
+
+	table.Row().
+		Cell("код", optsBounded).
+		Cell("условное\nобозна-\nчение\n(нацио-\nнальное)", optsBounded).
+		Cell("цифро-\nвой\nкод", optsBounded).
+		Cell("краткое\nнаимено-\nвание", optsBounded)
 }
 
-func tableNumberHeader(columns []unit.MM) func(*pdf_craft.Block) {
-	return func(block *pdf_craft.Block) {
-		table := block.Slot().
-			Table(1, columns)
+func (tmpl *updTemplate) tableNumberHeader(block *pdf_craft.Block) {
+	table := block.Slot().
+		Table(1, tmpl.tableColumns)
 
-		table.Row().
-			Cell("А", pdf_craft.CellOptions{Align: "CM", Height: 3, Border: "tblR"}).
-			Outlined("1").
-			Outlined("1а").
-			Outlined("1б").
-			Outlined("2").
-			Outlined("2а").
-			Outlined("3").
-			Outlined("4").
-			Outlined("5").
-			Outlined("6").
-			Outlined("7").
-			Outlined("8").
-			Outlined("9").
-			Outlined("10").
-			Outlined("10а").
-			Outlined("11")
-	}
+	table.Row().
+		Cell("А", pdf_craft.CellOptions{Align: "CM", Height: 3, Border: "tblR"}).
+		Outlined("1").
+		Outlined("1а").
+		Outlined("1б").
+		Outlined("2").
+		Outlined("2а").
+		Outlined("3").
+		Outlined("4").
+		Outlined("5").
+		Outlined("6").
+		Outlined("7").
+		Outlined("8").
+		Outlined("9").
+		Outlined("10").
+		Outlined("10а").
+		Outlined("11")
 }
 
-func tableDetails(columns []unit.MM) pdf_craft.RepeaterApplier {
-	return func(block *pdf_craft.Block, section []string) {
-		table := block.Slot().
-			Table(1, columns)
+func (tmpl *updTemplate) tableDetails(block *pdf_craft.Block, section []string) {
+	table := block.Slot().
+		Table(1, tmpl.tableColumns)
 
-		table.Row().
-			Cell(section[0], pdf_craft.CellOptions{ID: 0, Align: "CB", Border: "tblR"}).
-			Outlined(section[1], pdf_craft.CellOptions{ID: 1, Align: "CB"}).
-			Outlined(section[2], pdf_craft.CellOptions{ID: 2, Align: "LB", Wrap: true}).
-			Outlined(section[3], pdf_craft.CellOptions{ID: 3, Align: "CB"}).
-			Outlined(section[4], pdf_craft.CellOptions{ID: 4, Align: "RB"}).
-			Outlined(section[5], pdf_craft.CellOptions{ID: 5, Align: "LB"}).
-			Outlined(section[6], pdf_craft.CellOptions{ID: 6, Align: "RB"}).
-			Outlined(section[7], pdf_craft.CellOptions{ID: 7, Align: "RB"}).
-			Outlined(section[8], pdf_craft.CellOptions{ID: 8, Align: "RB"}).
-			Outlined(section[9], pdf_craft.CellOptions{ID: 9, Align: "RB"}).
-			Outlined(section[10], pdf_craft.CellOptions{ID: 10, Align: "RB"}).
-			Outlined(section[11], pdf_craft.CellOptions{ID: 11, Align: "RB"}).
-			Outlined(section[12], pdf_craft.CellOptions{ID: 12, Align: "RB"}).
-			Outlined(section[13], pdf_craft.CellOptions{ID: 13, Align: "RB"}).
-			Outlined(section[14], pdf_craft.CellOptions{ID: 14, Align: "LB"}).
-			Outlined(section[15], pdf_craft.CellOptions{ID: 15, Align: "LB"})
-	}
+	table.Row().
+		Cell(section[0], pdf_craft.CellOptions{ID: 0, Align: "CB", Border: "tblR"}).
+		Outlined(section[1], pdf_craft.CellOptions{ID: 1, Align: "CB"}).
+		Outlined(section[2], pdf_craft.CellOptions{ID: 2, Align: "LB", Wrap: true}).
+		Outlined(section[3], pdf_craft.CellOptions{ID: 3, Align: "CB"}).
+		Outlined(section[4], pdf_craft.CellOptions{ID: 4, Align: "RB"}).
+		Outlined(section[5], pdf_craft.CellOptions{ID: 5, Align: "LB"}).
+		Outlined(section[6], pdf_craft.CellOptions{ID: 6, Align: "RB"}).
+		Outlined(section[7], pdf_craft.CellOptions{ID: 7, Align: "RB"}).
+		Outlined(section[8], pdf_craft.CellOptions{ID: 8, Align: "RB"}).
+		Outlined(section[9], pdf_craft.CellOptions{ID: 9, Align: "RB"}).
+		Outlined(section[10], pdf_craft.CellOptions{ID: 10, Align: "RB"}).
+		Outlined(section[11], pdf_craft.CellOptions{ID: 11, Align: "RB"}).
+		Outlined(section[12], pdf_craft.CellOptions{ID: 12, Align: "RB"}).
+		Outlined(section[13], pdf_craft.CellOptions{ID: 13, Align: "RB"}).
+		Outlined(section[14], pdf_craft.CellOptions{ID: 14, Align: "LB"}).
+		Outlined(section[15], pdf_craft.CellOptions{ID: 15, Align: "LB"})
 }
 
-func (dto DTO) tableFooter(columns []unit.MM) pdf_craft.BlockApplier {
-	return func(block *pdf_craft.Block) {
-		table := block.Slot().
-			Table(1, columns)
+func (tmpl *updTemplate) tableFooter(block *pdf_craft.Block) {
+	table := block.Slot().
+		Table(1, tmpl.tableColumns)
 
-		table.Row().
-			Cell("", pdf_craft.CellOptions{Border: "tblR", Height: 3}).
-			Outlined("Всего к оплате:", pdf_craft.CellOptions{Align: "RB", Colspan: 7, Font: pdf_craft.FontBold}).
-			Outlined(dto.AmountWithoutVatTotal, pdf_craft.CellOptions{Align: "RB"}).
-			Outlined("X", pdf_craft.CellOptions{Align: "CB", Colspan: 2, Font: pdf_craft.FontBold}).
-			Outlined(dto.AmountVatTotal, pdf_craft.CellOptions{Align: "RB"}).
-			Outlined(dto.AmountWithVatTotal, pdf_craft.CellOptions{Align: "RB"}).
-			Outlined("", pdf_craft.CellOptions{Colspan: 3})
-	}
+	table.Row().
+		Cell("", pdf_craft.CellOptions{Border: "tblR", Height: 3}).
+		Outlined("Всего к оплате:", pdf_craft.CellOptions{Align: "RB", Colspan: 7, Font: pdf_craft.FontBold}).
+		Outlined(tmpl.dto.AmountWithoutVatTotal, pdf_craft.CellOptions{Align: "RB"}).
+		Outlined("X", pdf_craft.CellOptions{Align: "CB", Colspan: 2, Font: pdf_craft.FontBold}).
+		Outlined(tmpl.dto.AmountVatTotal, pdf_craft.CellOptions{Align: "RB"}).
+		Outlined(tmpl.dto.AmountWithVatTotal, pdf_craft.CellOptions{Align: "RB"}).
+		Outlined("", pdf_craft.CellOptions{Colspan: 3})
 }
 
-func (dto DTO) signatories(block *pdf_craft.Block) {
+func (tmpl *updTemplate) signatories(block *pdf_craft.Block) {
 	table := block.Slot(pdf_craft.NodeOptions{
 		IndentH: 21,
 		Border:  "LB",
@@ -324,10 +324,10 @@ func (dto DTO) signatories(block *pdf_craft.Block) {
 	table.Row().
 		Cell("Руководитель организации\nили иное уполномоченное лицо", pdf_craft.CellOptions{Height: 10, Align: "LB", Wrap: true}).
 		Blank("[электронная подпись]", "CB").
-		Blank(dto.OrgChiefName, "CB").
+		Blank(tmpl.dto.OrgChiefName, "CB").
 		Cell("Главный бухгалтер\nили иное уполномоченное лицо", pdf_craft.CellOptions{Height: 10, Align: "LB", Wrap: true}).
 		Blank("[электронная подпись]", "CB").
-		Blank(dto.OrgAccountantName, "CB")
+		Blank(tmpl.dto.OrgAccountantName, "CB")
 	table.Row().
 		Skip().
 		Underscore("(подпись)").
@@ -347,7 +347,7 @@ func (dto DTO) signatories(block *pdf_craft.Block) {
 		UnderscoreSpan("(основной государственный регистрационный номер индивидуального предпринимателя и дата присвоения такого номера)", 3)
 }
 
-func (dto DTO) shippingHeaders(block *pdf_craft.Block) {
+func (tmpl *updTemplate) shippingHeaders(block *pdf_craft.Block) {
 	table := block.Slot().
 		Table(4, []unit.MM{60, 224, 10},
 			pdf_craft.TableOptions{
@@ -357,7 +357,7 @@ func (dto DTO) shippingHeaders(block *pdf_craft.Block) {
 
 	table.Row().
 		Label("Основание передачи (сдачи) / получения (приемки)").
-		Blank(dto.Contract, "LB").
+		Blank(tmpl.dto.Contract, "LB").
 		Paragraph("[10]")
 	table.Row().
 		Skip().
@@ -371,7 +371,7 @@ func (dto DTO) shippingHeaders(block *pdf_craft.Block) {
 		Underscore("(транспортная накладная, поручение экспедитору, экспедиторская / складская расписка и др. / масса нетто/ брутто груза, если не приведены ссылки на транспортные документы, содержащие эти сведения)")
 }
 
-func (dto DTO) shippingBody(block *pdf_craft.Block) {
+func (tmpl *updTemplate) shippingBody(block *pdf_craft.Block) {
 	columns := []unit.MM{44, 44, 44, 10}
 	rowOptions := pdf_craft.RowOptions{MinHeight: 4}
 
@@ -389,9 +389,9 @@ func (dto DTO) shippingBody(block *pdf_craft.Block) {
 	table.Row().
 		LabelSpan("Товар (груз) передал / услуги, результаты работ, права сдал", 2)
 	table.Row(rowOptions).
-		Blank(dto.StoreKeeperPosition, "").
+		Blank(tmpl.dto.StoreKeeperPosition, "").
 		Blank("[электронная подпись]", "").
-		Blank(dto.StoreKeeperName, "").
+		Blank(tmpl.dto.StoreKeeperName, "").
 		Paragraph("[12]")
 	table.Row().
 		Underscore("(должность)").
@@ -399,21 +399,21 @@ func (dto DTO) shippingBody(block *pdf_craft.Block) {
 		Underscore("(Ф.И.О.)")
 	table.Row(rowOptions).
 		Label("Дата отгрузки, передачи (сдачи)").
-		BlankSpan(dto.DocSendDate, "", 2).
+		BlankSpan(tmpl.dto.DocSendDate, "", 2).
 		Paragraph("[13]")
 	table.Row(rowOptions).
 		LabelSpan("Иные сведения об отгрузке, передаче", 2)
 	table.Row(rowOptions).
-		BlankSpan(dto.LkID, "LB", 3).
+		BlankSpan(tmpl.dto.LkID, "LB", 3).
 		Paragraph("[14]")
 	table.Row().
 		UnderscoreSpan("(ссылки на неотъемлемые приложения, сопутствующие документы, иные документы и т.п.)", 3)
 	table.Row(rowOptions).
 		LabelSpan("Ответственный за правильность оформления факта хозяйственной жизни", 2)
 	table.Row(rowOptions).
-		Blank(dto.SenderChiefPosition, "").
+		Blank(tmpl.dto.SenderChiefPosition, "").
 		Blank("[электронная подпись]", "").
-		Blank(dto.SenderChiefName, "").
+		Blank(tmpl.dto.SenderChiefName, "").
 		Paragraph("[15]")
 	table.Row().
 		Underscore("(должность)").
@@ -422,7 +422,7 @@ func (dto DTO) shippingBody(block *pdf_craft.Block) {
 	table.Row(rowOptions).
 		LabelSpan("Наименование экономического субъекта – составителя документа (в т.ч. комиссионера / агента)", 2)
 	table.Row(rowOptions).
-		BlankSpan(dto.OrgPrintName, "LB", 3).
+		BlankSpan(tmpl.dto.OrgPrintName, "LB", 3).
 		Paragraph("[16]")
 	table.Row().
 		UnderscoreSpan("(может не заполняться при проставлении печати в М.П., может быть указан ИНН / КПП)", 3)
@@ -446,9 +446,9 @@ func (dto DTO) shippingBody(block *pdf_craft.Block) {
 	table.Row().
 		LabelSpan("Товар (груз) получил / услуги, результаты работ, права принял", 2)
 	table.Row(rowOptions).
-		Blank(dto.RecipientPosition, "").
+		Blank(tmpl.dto.RecipientPosition, "").
 		Image("fisher", pdf_craft.CellOptions{Border: "b", Align: "BC", Scale: 2, OffsetV: 2, PlaceHolder: "Jeliy Fisher"}).
-		Blank(dto.RecipientName, "").
+		Blank(tmpl.dto.RecipientName, "").
 		Paragraph("[17]")
 	table.Row().
 		Underscore("(должность)").
@@ -456,7 +456,7 @@ func (dto DTO) shippingBody(block *pdf_craft.Block) {
 		Underscore("(Ф.И.О.)")
 	table.Row(rowOptions).
 		Label("Дата получения (приемки)").
-		BlankSpan(dto.DocReceiveDate, "", 2).
+		BlankSpan(tmpl.dto.DocReceiveDate, "", 2).
 		Paragraph("[18]")
 	table.Row(rowOptions).
 		LabelSpan("Иные сведения о получении, приемке", 2)
@@ -468,9 +468,9 @@ func (dto DTO) shippingBody(block *pdf_craft.Block) {
 	table.Row(rowOptions).
 		LabelSpan("Ответственный за правильность оформления факта хозяйственной жизни", 2)
 	table.Row(rowOptions).
-		Blank(dto.RecipientChiefPosition, "").
+		Blank(tmpl.dto.RecipientChiefPosition, "").
 		Image("gaben", pdf_craft.CellOptions{Border: "b", Align: "BC", Scale: 2, OffsetV: 2, PlaceHolder: "Gabe Newell"}).
-		Blank(dto.RecipientChiefName, "").
+		Blank(tmpl.dto.RecipientChiefName, "").
 		Paragraph("[20]")
 	table.Row().
 		Underscore("(должность)").
@@ -479,7 +479,7 @@ func (dto DTO) shippingBody(block *pdf_craft.Block) {
 	table.Row(rowOptions).
 		LabelSpan("Наименование экономического субъекта – составителя документа (в т.ч. комиссионера / агента)", 2)
 	table.Row(rowOptions).
-		BlankSpan(dto.SupplierPrintName, "LB", 3).
+		BlankSpan(tmpl.dto.SupplierPrintName, "LB", 3).
 		Paragraph("[21]")
 	table.Row().
 		UnderscoreSpan("(может не заполняться при проставлении печати в М.П., может быть указан ИНН / КПП)", 3)
@@ -487,7 +487,7 @@ func (dto DTO) shippingBody(block *pdf_craft.Block) {
 		Cell("М.П.")
 }
 
-func (dto DTO) watermark(block *pdf_craft.Block) {
+func (tmpl *updTemplate) watermark(block *pdf_craft.Block) {
 	table := block.Slot().
 		Table(3, []unit.MM{40, 40, 40, 40},
 			pdf_craft.TableOptions{
@@ -510,10 +510,10 @@ func (dto DTO) watermark(block *pdf_craft.Block) {
 	table.Row().
 		Label("Подпись отправителя", opts).
 		Label("Квалифицированная ЭП", opts).
-		Label("номер КЭП 90379e6a254d4df79c93", opts).
-		Label("01.06.2026, 05:45", opts)
+		Label("номер КЭП"+tmpl.dto.Certificate.KEP, opts).
+		Label(tmpl.dto.Certificate.SignDate, opts)
 	table.Row().
 		Skip().
-		Label(dto.OrgAccountantName, opts).
-		Label("период действия с 01.01.2025 09:00\nпо 01.01.2028 09:00", pdf_craft.CellOptions{FontSize: 5, Wrap: true})
+		Label(tmpl.dto.Certificate.SignerName, opts).
+		Label(fmt.Sprintf("период действия с %s\nпо %s", tmpl.dto.Certificate.ValidityPeriodFrom, tmpl.dto.Certificate.ValidityPeriodTo), pdf_craft.CellOptions{FontSize: 5, Wrap: true})
 }

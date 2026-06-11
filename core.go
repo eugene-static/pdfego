@@ -24,17 +24,18 @@ const (
 // Core -- ядро конструктора. Позволяет настроить конструктор единожды и переиспользовать эти настройки при каждой новой генерацией.
 // Так же содержит информацию, необходимую для различных узлов конструктора.
 type Core struct {
-	mainBuffer *buffer.Buffer
-	fonts      map[string]*font.Font
-	images     map[string]*image.Image
-	comp       compressor
-	page       page
-	fontAlias  string
-	fontSize   unit.PT
-	borderSize unit.PT
-	offsets    []int
-	compress   bool
-	error      error
+	mainBuffer          *buffer.Buffer
+	fonts               map[string]*font.Font
+	images              map[string]*image.Image
+	comp                compressor
+	page                page
+	fontAlias           string
+	fontSize            unit.PT
+	borderSize          unit.PT
+	offsets             []int
+	error               error
+	compress            bool
+	ignoreImageNotFound bool
 }
 
 // NewCore инициализирует новый экземпляр ядра конструктора с заранее заданной ориентацией страницы.
@@ -74,9 +75,18 @@ func NewCore(orientation string) *Core {
 	}
 }
 
-// WithCompression включает компрессию страниц документа. Значительно уменьшает объем файла, но увеличивает время на генерацию.
-func (core *Core) WithCompression() {
+// EnableCompression включает компрессию страниц документа. Значительно уменьшает объем файла, но увеличивает время на генерацию.
+func (core *Core) EnableCompression() {
 	core.compress = true
+}
+
+func (core *Core) DisableCompression() {
+	core.compress = false
+}
+
+// IgnoreImageNotFound игнорирует ошибку, если изображение не найдено. Вместо ненайденного изображение будет использован Placeholder.
+func (core *Core) IgnoreImageNotFound() {
+	core.ignoreImageNotFound = true
 }
 
 // ReadFont добавляет новый шрифт с заданным псевдонимом alias, который потом можно использовать в каждой ячейке таблицы.
@@ -205,7 +215,6 @@ func (core *Core) err() error {
 }
 
 func (core *Core) bytes() []byte {
-	defer core.reset()
 	return core.mainBuffer.Bytes()
 }
 
@@ -232,10 +241,10 @@ func (core *Core) font(alias string) *font.Font {
 
 func (core *Core) image(alias string) *image.Image {
 	img, ok := core.images[alias]
-	if !ok {
-		//err := fmt.Errorf("не найдено изображение с таким именем: %s", alias)
-		//
-		//core.setError(err)
+	if !ok && !core.ignoreImageNotFound {
+		err := fmt.Errorf("не найдено изображение с таким именем: %s", alias)
+
+		core.setError(err)
 
 		return nil
 	}
@@ -299,7 +308,7 @@ func (core *Core) renderPage() {
 
 func (core *Core) reset() {
 	core.offsets = core.offsets[:3]
-	//core.error = nil
+	core.error = nil
 	core.mainBuffer.Reset()
 }
 
@@ -403,5 +412,16 @@ func (comp compressor) compress(buf []byte) ([]byte, error) {
 		return nil, err
 	}
 
-	return comp.buffer.Bytes(), nil
+	result := make([]byte, comp.buffer.Len())
+	copy(result, comp.buffer.Bytes())
+
+	return result, nil
+}
+
+type ImageNotFoundError struct {
+	alias string
+}
+
+func (err *ImageNotFoundError) Error() string {
+	return fmt.Sprintf("не найдено изображение с таким именем: %s", err.alias)
 }

@@ -90,9 +90,18 @@ func (c *Constructor) Bytes() ([]byte, error) {
 	c.render()
 	c.renderPage()
 
+	defer c.reset()
+
 	c.core.finishDocument()
 
-	return c.core.bytes(), c.core.err()
+	defer c.core.reset()
+
+	err := c.core.err()
+	if err != nil {
+		return nil, err
+	}
+
+	return c.core.bytes(), nil
 }
 
 // Возвращает экземпляр Block. Все блоки располагаются вертикально друг за другом.
@@ -187,15 +196,13 @@ func (c *Constructor) Paginate(offset int) {
 	c.paginator.Slot().Table(1, Columns(5)).Row().Cell("0", CellOptions{TextColor: ColorGray50})
 }
 
-// Reset сбрасывает конструктор до момента инициализации. Значения ядра сохраняются.
-func (c *Constructor) Reset() {
+func (c *Constructor) reset() {
 	c.block.reset()
 
 	c.x0, c.y0 = c.core.page.x0y0()
 	c.x, c.y = c.x0, c.y0
 
 	c.core.page.reset()
-	c.core.setError(nil)
 	c.core.startDocument()
 	c.core.newPage()
 }
@@ -1080,8 +1087,6 @@ func (r *Row) newCell(text string, profile uint8, options CellOptions) {
 
 	c := &r.cells[r.columnIndex]
 
-	text = coalesce(text, options.PlaceHolder)
-
 	c.id = options.ID
 	c.height = options.Height
 	c.static = options.Height > 0
@@ -1099,7 +1104,11 @@ func (r *Row) newCell(text string, profile uint8, options CellOptions) {
 	if profile == imageCell {
 		c.image = r.core.image(text)
 		c.imageScale = coalesce(options.Scale, 1)
+
+		text = options.PlaceHolder
 	}
+
+	text = coalesce(text, options.PlaceHolder)
 
 	if text != "" {
 		c.wrapped = options.Wrap
@@ -1283,11 +1292,11 @@ func (c *cell) lineDx(index int) (dx unit.MM) {
 
 	switch c.alignH {
 	case alignR:
-		dx = c.width - textWidth - font.Padding(c.fontSize).MM()
+		dx = c.width - textWidth - font.Margin(c.fontSize).MM()
 	case alignC:
 		dx = (c.width - textWidth) / 2
 	default:
-		dx = font.Padding(c.fontSize).MM()
+		dx = font.Margin(c.fontSize).MM()
 	}
 
 	return dx
@@ -1296,7 +1305,7 @@ func (c *cell) lineDx(index int) (dx unit.MM) {
 func (c *cell) lineDy(index int) (dy unit.MM) {
 	fontHeight := c.font.Height(c.fontSize).MM()
 	lenTextLines := len(c.textLines)
-	padding := font.Padding(c.fontSize).MM()
+	padding := font.Margin(c.fontSize).MM()
 
 	// index + 1 необходим для того, чтобы выставить Y-координату по верхнему краю шрифта.
 	// PDF считает Y от нижней границы страницы, а здесь все координаты указаны от верхней. К тому же позиционирует шрифт по baseline.

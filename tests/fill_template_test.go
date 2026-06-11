@@ -1,22 +1,28 @@
 package tests
 
 import (
+	"errors"
 	"os"
 	"runtime"
 	"testing"
 	"time"
+
+	pdf_craft "github.com/eugene-static/pdf-craft"
 )
 
 func BenchmarkUPD_FillTemplate(b *testing.B) {
-	upd := NewDTO(3333)
-
 	template, err := prepareTemplate()
+	if err != nil {
+		b.Fatal(err)
+	}
+
+	template.dto = newDTO(10000)
 
 	b.ReportAllocs()
 	b.ResetTimer()
 
 	for range b.N {
-		_, err = upd.fillTemplate(template)
+		_, err = template.fill()
 		if err != nil {
 			b.Fatal(err)
 		}
@@ -26,21 +32,25 @@ func BenchmarkUPD_FillTemplate(b *testing.B) {
 }
 
 func TestUPD_FillTemplate(t *testing.T) {
-	upd := NewDTO(1)
-
 	template, err := prepareTemplate()
 	if err != nil {
 		t.Fatal(err)
 	}
+
+	template.dto = newDTO(1)
 
 	var memBefore runtime.MemStats
 	runtime.ReadMemStats(&memBefore)
 
 	_time := time.Now()
 
-	bytes, err := upd.fillTemplate(template)
+	bytes, err := template.fill()
 	if err != nil {
-		t.Fatal(err)
+		var imgError *pdf_craft.ImageNotFoundError
+
+		if !errors.As(err, &imgError) {
+			t.Fatal(err)
+		}
 	}
 
 	t.Logf("Длительность формирования одной итерации: %v\n", time.Since(_time))
