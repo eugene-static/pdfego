@@ -1,25 +1,24 @@
-package core
+package pdfego
 
 import (
-	"log/slog"
 	"strconv"
 	"time"
 
-	"github.com/eugene-static/pdf-craft/buffer"
-	"github.com/eugene-static/pdf-craft/font"
+	"github.com/eugene-static/pdfego/internal/buffer"
+	"github.com/eugene-static/pdfego/internal/font"
+	"github.com/eugene-static/pdfego/internal/image"
 )
 
 const (
-	pagesObjNum     = 1
-	resourcesObjNum = 2
+	objNumPages     = 1
+	objNumResources = 2
 )
 
-func (core *Core) StartDocument() {
+func (core *Core) startDocument() {
 	core.writeFileHeader()
 }
 
-func (core *Core) FinishDocument() {
-	core.WritePage()
+func (core *Core) finishDocument() {
 	core.writePages()
 	core.writeResources()
 
@@ -32,45 +31,73 @@ func (core *Core) FinishDocument() {
 }
 
 func (core *Core) writeResources() {
-	type fontResource struct {
-		alias  string
-		objNum int64
+	if core.err() != nil {
+		return
 	}
 
-	fontResources := make([]fontResource, 0, len(core.fonts))
+	type resource struct {
+		alias  string
+		objNum int
+	}
 
-	for _, f := range core.fonts {
-		fontObjNum := core.writeFont(f)
+	fontResources := make([]resource, 0, len(core.fonts))
+	imageResources := make([]resource, 0, len(core.images))
 
-		fontResources = append(fontResources, fontResource{
-			alias:  f.Alias(),
+	for alias, f := range core.fonts {
+		fontObjNum := core.writeFont(f, alias)
+
+		fontResources = append(fontResources, resource{
+			alias:  alias,
 			objNum: fontObjNum,
+		})
+	}
+
+	for alias, img := range core.images {
+		imageObjNum := core.writeImage(img)
+
+		imageResources = append(imageResources, resource{
+			alias:  alias,
+			objNum: imageObjNum,
 		})
 	}
 
 	b := core.mainBuffer
 
-	core.setObject(resourcesObjNum)
+	core.setObject(objNumResources)
 
-	b.StartObj(resourcesObjNum)
+	b.StartObj(objNumResources)
 	b.OpenObjectParameters()
+
 	b.WriteFieldString("/Font", "")
 	b.OpenObjectParameters()
 
-	for _, resource := range fontResources {
-		b.WriteRef("/"+resource.alias, resource.objNum)
+	for _, res := range fontResources {
+		b.WriteRef("/"+res.alias, res.objNum)
 	}
 
 	b.CloseObjectParameters()
+	b.WriteFieldString("/XObject", "")
+	b.OpenObjectParameters()
+
+	for _, res := range imageResources {
+		b.WriteRef("/"+res.alias, res.objNum)
+	}
+
+	b.CloseObjectParameters()
+
 	b.CloseObjectParameters()
 	b.EndObj()
 }
 
-func (core *Core) writeFont(f *font.Font) int64 {
-	b := core.mainBuffer
-	alias := "/" + f.Alias()
+func (core *Core) writeFont(f *font.Font, alias string) int {
+	if core.err() != nil {
+		return 0
+	}
 
-	cMapB := buffer.New()
+	b := core.mainBuffer
+	alias = "/" + alias
+
+	cMapB := buffer.New(1 << 10)
 
 	glyphs := f.Glyphs()
 
@@ -97,14 +124,21 @@ func (core *Core) writeFont(f *font.Font) int64 {
 
 	// ---------- (CMap) ----------
 	// "8 0 obj << /Length %length >> stream ... endstream endobj\n"
-	cMapOnjNum := core.newObject()
+	cMapObjNum := core.newObject()
 
-	b.StartObj(cMapOnjNum)
+	b.StartObj(cMapObjNum)
 	b.OpenObjectParameters()
 	b.WriteFieldInt("/Length", cMapB.Len())
 	b.CloseObjectParameters()
 	b.StartStream()
-	b.ReadFrom(cMapB)
+
+	_, err := b.ReadFrom(cMapB)
+	if err != nil {
+		core.setError(err)
+
+		return 0
+	}
+
 	b.EndStream()
 	b.EndObj()
 
@@ -118,8 +152,8 @@ func (core *Core) writeFont(f *font.Font) int64 {
 	b.WriteFieldString("/Subtype", "/Type0")
 	b.WriteFieldString("/BaseFont", alias)
 	b.WriteFieldString("/Encoding", "/Identity-H")
-	b.WriteRefArray("/DescendantFonts", []int64{fontNum + 1})
-	b.WriteRef("/ToUnicode", cMapOnjNum)
+	b.WriteRefArray("/DescendantFonts", []int{fontNum + 1})
+	b.WriteRef("/ToUnicode", cMapObjNum)
 	b.CloseObjectParameters()
 	b.EndObj()
 
@@ -153,7 +187,7 @@ func (core *Core) writeFont(f *font.Font) int64 {
 	b.WriteFieldInt("/ItalicAngle", 0) //TODO: Italic Font
 	b.WriteFieldInt("/Ascent", metrics.Ascent)
 	b.WriteFieldInt("/Descent", metrics.Descent)
-	b.WriteFieldInt("/CapHeight", metrics.CapHeight)
+	b.WriteFieldInt("/CapHeight", metrics.CapHeight.Round())
 	b.WriteFieldInt("/StemV", metrics.StemV)
 	b.WriteRef("/FontFile2", objNum+1)
 	b.CloseObjectParameters()
@@ -163,42 +197,169 @@ func (core *Core) writeFont(f *font.Font) int64 {
 	// "12 0 obj<< /Length %font_bytes_length /Length1 %font_bytes_length >>stream\nfont_bytes\nendstream\nendobj\n"
 	objNum = core.newObject()
 
-	data, l, err := f.Data()
-	if err != nil {
-		// TODO: errors
-		core.log.Debug("error reading data from font", slog.String("err", err.Error()))
+	fontRawBytes := f.Bytes()
+
+	fontBytes, ok := f.CompressedBytes()
+	if !ok {
+		subset, err := f.Subset()
+		if err != nil {
+			core.setError(err)
+
+			return 0
+		}
+
+		compressedBytes, err := core.comp.compress(subset)
+		if err != nil {
+			core.setError(err)
+
+			return 0
+		}
+
+		f.SaveCompressedBytes(compressedBytes)
+
+		fontBytes = compressedBytes
 	}
 
 	b.StartObj(objNum)
 	b.OpenObjectParameters()
 	b.WriteFieldString("/Filter", "/FlateDecode")
-	b.WriteFieldInt("/Length", len(data))
-	b.WriteFieldInt("/Length1", l)
+	b.WriteFieldInt("/Length", len(fontBytes))
+	b.WriteFieldInt("/Length1", len(fontRawBytes))
 	b.CloseObjectParameters()
 	b.StartStream()
-	b.Write(data)
+
+	_, err = b.Write(fontBytes)
+	if err != nil {
+		return 0
+	}
+
 	b.EndStream()
 	b.EndObj()
 
 	return fontNum
 }
 
-func (core *Core) writePages() {
+func (core *Core) writeImage(img *image.Image) int {
+	if core.err() != nil {
+		return 0
+	}
+
 	b := core.mainBuffer
 
-	core.setObject(pagesObjNum)
+	var alphaObjNum int
 
-	b.StartObj(pagesObjNum)
+	alphaBytes, ok := img.Alpha()
+	if alphaBytes != nil {
+		alphaObjNum = core.newObject()
+
+		if !ok {
+			compBytes, err := core.comp.compress(alphaBytes)
+			if err != nil {
+				core.setError(err)
+
+				return 0
+			}
+
+			img.SaveCompressedAlpha(compBytes)
+
+			alphaBytes = compBytes
+		}
+
+		b.StartObj(alphaObjNum)
+		b.OpenObjectParameters()
+		b.WriteFieldString("/Type", "/XObject")
+		b.WriteFieldString("/Subtype", "/Image")
+		b.WriteFieldInt("/Width", img.Width())
+		b.WriteFieldInt("/Height", img.Height())
+		b.WriteFieldString("/ColorSpace", "/DeviceGray")
+		b.WriteFieldInt("/BitsPerComponent", 8)
+		b.WriteFieldString("/Filter", "/FlateDecode")
+		b.WriteFieldInt("/Length", len(alphaBytes))
+		b.CloseObjectParameters()
+		b.StartStream()
+
+		_, err := b.Write(alphaBytes)
+		if err != nil {
+			core.setError(err)
+
+			return 0
+		}
+
+		b.EndStream()
+		b.EndObj()
+	}
+
+	objNum := core.newObject()
+
+	imageBytes, ok := img.RGB()
+	if !ok {
+		compressedBytes, err := core.comp.compress(imageBytes)
+		if err != nil {
+			core.setError(err)
+
+			return 0
+		}
+
+		img.SaveCompressedRGB(compressedBytes)
+
+		imageBytes = compressedBytes
+	}
+
+	b.StartObj(objNum)
+	b.OpenObjectParameters()
+	b.WriteFieldString("/Type", "/XObject")
+	b.WriteFieldString("/Subtype", "/Image")
+	b.WriteFieldInt("/Width", img.Width())
+	b.WriteFieldInt("/Height", img.Height())
+	b.WriteFieldString("/ColorSpace", "/DeviceRGB")
+	b.WriteFieldInt("/BitsPerComponent", 8)
+	b.WriteFieldString("/Filter", "/FlateDecode")
+	b.WriteFieldInt("/Length", len(imageBytes))
+
+	if alphaObjNum > 0 {
+		b.WriteRef("/SMask", alphaObjNum)
+	}
+
+	b.CloseObjectParameters()
+	b.StartStream()
+
+	_, err := b.Write(imageBytes)
+	if err != nil {
+		core.setError(err)
+
+		return 0
+	}
+
+	b.EndStream()
+	b.EndObj()
+
+	return objNum
+}
+
+func (core *Core) writePages() {
+	if core.err() != nil {
+		return
+	}
+
+	b := core.mainBuffer
+
+	core.setObject(objNumPages)
+
+	b.StartObj(objNumPages)
 	b.OpenObjectParameters()
 	b.WriteFieldString("/Type", "/Pages")
-	b.WriteRefArray("/Kids", core.pageObjs)
-	b.WriteFieldInt("/Count", len(core.pageObjs))
+	b.WriteRefArray("/Kids", core.page.objects)
+	b.WriteFieldInt("/Count", len(core.page.objects))
 	b.WriteFieldFloatArray("/MediaBox", []float64{0, 0, core.page.width.PT().Float64(), core.page.height.PT().Float64()})
 	b.CloseObjectParameters()
 	b.EndObj()
 }
 
-func (core *Core) WritePage() {
+func (core *Core) writePage() {
+	if core.err() != nil {
+		return
+	}
+
 	b := core.mainBuffer
 	pageObjNum := core.newObject()
 
@@ -215,23 +376,54 @@ func (core *Core) WritePage() {
 
 	b.StartObj(objNum)
 	b.OpenObjectParameters()
-	b.WriteFieldInt("/Length", core.pageBuffer.Len())
+
+	pageBytes := core.page.buffer.Bytes()
+	length := core.page.buffer.Len()
+
+	if core.compress {
+		compressed, err := core.comp.compress(pageBytes)
+		if err != nil {
+			core.setError(err)
+
+			return
+		}
+
+		pageBytes = compressed
+		length = len(compressed)
+		b.WriteFieldString("/Filter", "/FlateDecode")
+	}
+
+	b.WriteFieldInt("/Length", length)
 	b.CloseObjectParameters()
 	b.StartStream()
-	b.ReadFrom(core.pageBuffer)
+
+	_, err := b.Write(pageBytes)
+	if err != nil {
+		core.setError(err)
+
+		return
+	}
+
 	b.EndStream()
 	b.EndObj()
 
-	core.pageObjs = append(core.pageObjs, pageObjNum)
-	core.pageBuffer.Reset()
+	core.page.objects = append(core.page.objects, pageObjNum)
 }
 
 func (core *Core) writeFileHeader() {
+	if core.err() != nil {
+		return
+	}
+
 	core.mainBuffer.WriteStringLn("%PDF-1.6")
 	core.mainBuffer.WriteStringLn("%\x80\x80\x80\x80")
 }
 
-func (core *Core) writeInfo() int64 {
+func (core *Core) writeInfo() int {
+	if core.err() != nil {
+		return 0
+	}
+
 	creationDate := time.Now().Format("D:20060102150405-07'00'")
 
 	b := core.mainBuffer
@@ -247,14 +439,18 @@ func (core *Core) writeInfo() int64 {
 	return objNum
 }
 
-func (core *Core) writeCatalog() int64 {
+func (core *Core) writeCatalog() int {
+	if core.err() != nil {
+		return 0
+	}
+
 	b := core.mainBuffer
 	objNum := core.newObject()
 
 	b.StartObj(objNum)
 	b.OpenObjectParameters()
 	b.WriteFieldString("/Type", "/Catalog")
-	b.WriteRef("/Pages", pagesObjNum)
+	b.WriteRef("/Pages", objNumPages)
 	b.CloseObjectParameters()
 	b.EndObj()
 
@@ -262,6 +458,10 @@ func (core *Core) writeCatalog() int64 {
 }
 
 func (core *Core) writeXref() int {
+	if core.err() != nil {
+		return 0
+	}
+
 	xrefOffset := core.mainBuffer.Len()
 
 	b := core.mainBuffer
@@ -280,7 +480,11 @@ func (core *Core) writeXref() int {
 	return xrefOffset
 }
 
-func (core *Core) writeTrailer(root, info int64) {
+func (core *Core) writeTrailer(root, info int) {
+	if core.err() != nil {
+		return
+	}
+
 	b := core.mainBuffer
 
 	b.WriteStringLn("trailer")
@@ -292,6 +496,10 @@ func (core *Core) writeTrailer(root, info int64) {
 }
 
 func (core *Core) writeEOF(xrefOffset int) {
+	if core.err() != nil {
+		return
+	}
+
 	b := core.mainBuffer
 
 	b.WriteStringLn("startxref")

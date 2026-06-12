@@ -1,4 +1,4 @@
-package meter
+package unit
 
 import (
 	"math"
@@ -49,12 +49,6 @@ func (mm MM) Abs() (res MM) {
 	return res
 }
 
-func (mm MM) Neg() (res MM) {
-	res = -mm
-
-	return res
-}
-
-func FontHeight(fontSize PT) MM {
-	return fontSize.MM() * 1.2 //TODO:
+func (mm MM) Neg() MM {
+	return -mm
 }

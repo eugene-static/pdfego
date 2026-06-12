@@ -5,3 +5,4 @@
 .env
 *_easyjson.go
 __debug*
+.dev

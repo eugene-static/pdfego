@@ -6,7 +6,7 @@ import (
 )
 
 func Test_WriteInt64d10(t *testing.T) {
-	b := New()
+	b := New(0)
 
 	cases := map[string]struct {
 		value    int64

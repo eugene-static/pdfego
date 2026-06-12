@@ -49,8 +49,6 @@ func (f *Font) ttfSubset() ([]byte, error) {
 		glyphset[uint32(gl.index)] = struct{}{}
 	}
 
-	//slices.Sort(glyphsIndexes)
-
 	srcR := bytes.NewReader(f.rawData)
 	ld, err := loader.NewLoader(srcR)
 	if err != nil {
