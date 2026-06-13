@@ -7,7 +7,7 @@ import (
 	"github.com/eugene-static/pdfego/internal/buffer"
 	"github.com/eugene-static/pdfego/internal/font"
 	"github.com/eugene-static/pdfego/internal/image"
-	"github.com/eugene-static/pdfego/pkg/unit"
+	"github.com/eugene-static/pdfego/unit"
 )
 
 const (
@@ -905,7 +905,6 @@ type Row struct {
 	spacing     unit.MM
 	columnIndex uint8
 	columnsLen  uint8
-	//TODO: добавить border для строк
 }
 
 // Cell -- ячейка таблицы с заданным текстом. Использует шрифт, цвет по-умолчанию. Без рамки, позиционирование CM.

@@ -4,7 +4,7 @@ import (
 	"fmt"
 
 	"github.com/eugene-static/pdfego"
-	"github.com/eugene-static/pdfego/pkg/unit"
+	"github.com/eugene-static/pdfego/unit"
 )
 
 func prepareTemplate() (*updTemplate, error) {
