@@ -2,7 +2,7 @@ package pdfego
 
 import (
 	"github.com/eugene-static/pdfego/internal/buffer"
-	"github.com/eugene-static/pdfego/pkg/unit"
+	"github.com/eugene-static/pdfego/unit"
 )
 
 const (
@@ -51,7 +51,7 @@ const (
 //
 // Font -- шрифт текста.
 // Задается строкой с псевдонимом шрифта, инициализированного методом Core.ReadFont.
-// Если не задано, используется шрифт, заданный методом Core.SetDefaultFont или Core.SetFontRegular. //TODO
+// Если не задано, используется шрифт, заданный методом Core.SetFontRegular.
 //
 // FontSize -- размер шрифта.
 // Задается числом с плавающей запятой в пунктах unit.PT.
@@ -135,7 +135,7 @@ type WatermarkOptions struct {
 	Align string
 }
 
-// PaginatorOptions используется для настройки параметров пагинатора Paginator
+// PaginatorOptions используется для настройки параметров пагинатора Paginator.
 // Подробное описание всех полей здесь: Options.
 type PaginatorOptions struct {
 	Offset int
@@ -158,9 +158,7 @@ type TableOptions struct {
 // RowOptions используется для настройки параметров строки Row.
 // Подробное описание всех полей здесь: Options.
 type RowOptions struct {
-	MinHeight  unit.MM
-	Border     string
-	BorderSize unit.PT
+	MinHeight unit.MM
 }
 
 // CellOptions используется для настройки параметров ячейки.

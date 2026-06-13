@@ -6,7 +6,7 @@ import (
 	"strconv"
 
 	"github.com/eugene-static/pdfego/internal/font"
-	"github.com/eugene-static/pdfego/pkg/unit"
+	"github.com/eugene-static/pdfego/unit"
 )
 
 const DefaultSize = 1 << 16

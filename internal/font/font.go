@@ -6,7 +6,7 @@ import (
 	"os"
 	"slices"
 
-	"github.com/eugene-static/pdfego/pkg/unit"
+	"github.com/eugene-static/pdfego/unit"
 	"golang.org/x/image/font/sfnt"
 	"golang.org/x/image/math/fixed"
 )
@@ -271,10 +271,6 @@ func (f *Font) SplitText(text string, size unit.PT, width unit.MM, buf []Text) [
 		return segments
 	}
 
-	if cap(segments) < 10 {
-		segments = slices.Grow(segments, 10)
-	}
-
 	for i := start; i < len(f.manager.textBuffer); {
 		for i < len(f.manager.textBuffer) && f.manager.wrapSymbols(i) {
 			i++
@@ -320,12 +316,8 @@ func (f *Font) SplitText(text string, size unit.PT, width unit.MM, buf []Text) [
 }
 
 func (f *Font) saveRune(r rune) {
-	if r < rusRunesLimitIndex && f.manager.glyphsFastCache[r].rune > 0 {
-		return
-	}
-
-	_, ok := f.manager.glyphsSlowCache[r]
-	if ok {
+	gl, ok := f.manager.glyph(r)
+	if ok && gl.rune > 0 {
 		return
 	}
 
@@ -335,12 +327,7 @@ func (f *Font) saveRune(r rune) {
 
 	gid, _ := f.face.GlyphIndex(f.manager.faceBuffer, r) // err всегда nil
 
-	advance, err := f.face.GlyphAdvance(
-		f.manager.faceBuffer,
-		gid,
-		ppem,
-		hintingNone,
-	)
+	advance, err := f.face.GlyphAdvance(f.manager.faceBuffer, gid, ppem, hintingNone)
 	if err != nil {
 		advance = defaultAdvance // нас не интересует ошибка, просто ставим среднюю ширину символа.
 	}

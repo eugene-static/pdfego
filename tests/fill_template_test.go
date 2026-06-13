@@ -1,13 +1,10 @@
 package tests
 
 import (
-	"errors"
 	"os"
 	"runtime"
 	"testing"
 	"time"
-
-	"github.com/eugene-static/pdfego"
 )
 
 func BenchmarkUPD_FillTemplate(b *testing.B) {
@@ -46,11 +43,7 @@ func TestUPD_FillTemplate(t *testing.T) {
 
 	bytes, err := template.fill()
 	if err != nil {
-		var imgError *pdfego.ImageNotFoundError
-
-		if !errors.As(err, &imgError) {
-			t.Fatal(err)
-		}
+		t.Fatal(err)
 	}
 
 	t.Logf("Длительность формирования одной итерации: %v\n", time.Since(_time))
@@ -74,19 +67,7 @@ func TestUPD_FillTemplate(t *testing.T) {
 
 	defer output.Close()
 
-	outputText, err := os.Create("output_text.txt")
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	defer outputText.Close()
-
 	_, err = output.Write(bytes)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	_, err = outputText.Write(bytes)
 	if err != nil {
 		t.Fatal(err)
 	}

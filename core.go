@@ -9,7 +9,7 @@ import (
 	"github.com/eugene-static/pdfego/internal/buffer"
 	"github.com/eugene-static/pdfego/internal/font"
 	"github.com/eugene-static/pdfego/internal/image"
-	"github.com/eugene-static/pdfego/pkg/unit"
+	"github.com/eugene-static/pdfego/unit"
 )
 
 const (
@@ -416,12 +416,4 @@ func (comp compressor) compress(buf []byte) ([]byte, error) {
 	copy(result, comp.buffer.Bytes())
 
 	return result, nil
-}
-
-type ImageNotFoundError struct {
-	alias string
-}
-
-func (err *ImageNotFoundError) Error() string {
-	return fmt.Sprintf("не найдено изображение с таким именем: %s", err.alias)
 }

@@ -6,7 +6,7 @@ import (
 	"errors"
 	"slices"
 
-	loader "github.com/go-text/typesetting/font/opentype"
+	"github.com/go-text/typesetting/font/opentype"
 	"github.com/go-text/typesetting/font/opentype/tables"
 )
 
@@ -50,12 +50,13 @@ func (f *Font) ttfSubset() ([]byte, error) {
 	}
 
 	srcR := bytes.NewReader(f.rawData)
-	ld, err := loader.NewLoader(srcR)
+
+	ld, err := opentype.NewLoader(srcR)
 	if err != nil {
 		return nil, err
 	}
 
-	headRaw, err := ld.RawTable(loader.Tag(head))
+	headRaw, err := ld.RawTable(opentype.Tag(head))
 	if err != nil {
 		return nil, err
 	}
@@ -67,7 +68,7 @@ func (f *Font) ttfSubset() ([]byte, error) {
 
 	isLong := _head.IndexToLocFormat == 1
 
-	locaRaw, err := ld.RawTable(loader.Tag(loca))
+	locaRaw, err := ld.RawTable(opentype.Tag(loca))
 	if err != nil {
 		return nil, err
 	}
@@ -77,7 +78,7 @@ func (f *Font) ttfSubset() ([]byte, error) {
 		return nil, err
 	}
 
-	glyfRaw, err := ld.RawTable(loader.Tag(glyf))
+	glyfRaw, err := ld.RawTable(opentype.Tag(glyf))
 	if err != nil {
 		return nil, err
 	}
@@ -97,7 +98,7 @@ func (f *Font) ttfSubset() ([]byte, error) {
 		case i == n-1:
 			continue
 		default:
-			return nil, errors.New("invalid glyph ID or loca table")
+			return nil, errors.New("неверный глиф-индекса или таблица Loca")
 		}
 
 		if next == offset {
@@ -106,7 +107,7 @@ func (f *Font) ttfSubset() ([]byte, error) {
 
 		// следуя спецификации, _loca[n] должен быть меньше или равен _loca[n+1]
 		if next < offset || int(next) > len(glyfRaw) {
-			return nil, errors.New("invalid loca table")
+			return nil, errors.New("неверная таблица Loca")
 		}
 
 		g, _, err := tables.ParseGlyph(glyfRaw[offset:next])
@@ -136,8 +137,6 @@ func (f *Font) ttfSubset() ([]byte, error) {
 	slices.Sort(glyphsIndexes)
 
 	// loop back over the loca table and zero out the outlines of unused glyphs
-	//var finalOffset uint32
-	//var final uint32
 	for i := 0; i < len(_loca); i++ {
 		var offset, next uint32
 		if i < len(_loca)-1 {
@@ -149,7 +148,7 @@ func (f *Font) ttfSubset() ([]byte, error) {
 		}
 
 		if next < offset || int(next) > len(glyfRaw) {
-			return nil, errors.New("invalid loca table")
+			return nil, errors.New("неверная таблица Loca")
 		}
 
 		_, used := glyphset[uint32(i)]
@@ -167,7 +166,7 @@ func (f *Font) ttfSubset() ([]byte, error) {
 
 	// update the number of glyphs in the maxp table
 	// https://learn.microsoft.com/en-us/typography/opentype/spec/maxp
-	_maxp, err := ld.RawTable(loader.Tag(maxp))
+	_maxp, err := ld.RawTable(opentype.Tag(maxp))
 	if err != nil {
 		return nil, err
 	}
@@ -193,26 +192,26 @@ func (f *Font) ttfSubset() ([]byte, error) {
 	// truncate the glyf table
 	glyfRaw = glyfRaw[:finalOffset]
 
-	tables := make([]loader.Table, len(pdfTables))
+	tables := make([]opentype.Table, len(pdfTables))
 	for i, tag := range pdfTables {
 		switch tag {
 		case glyf:
-			tables[i] = loader.Table{Content: glyfRaw, Tag: loader.Tag(tag)}
+			tables[i] = opentype.Table{Content: glyfRaw, Tag: opentype.Tag(tag)}
 		case head:
-			tables[i] = loader.Table{Content: headRaw, Tag: loader.Tag(tag)}
+			tables[i] = opentype.Table{Content: headRaw, Tag: opentype.Tag(tag)}
 		case loca:
-			tables[i] = loader.Table{Content: locaRaw, Tag: loader.Tag(tag)}
+			tables[i] = opentype.Table{Content: locaRaw, Tag: opentype.Tag(tag)}
 		case maxp:
-			tables[i] = loader.Table{Content: _maxp, Tag: loader.Tag(tag)}
+			tables[i] = opentype.Table{Content: _maxp, Tag: opentype.Tag(tag)}
 		default:
-			cnt, err := ld.RawTable(loader.Tag(tag))
+			cnt, err := ld.RawTable(opentype.Tag(tag))
 			if err != nil {
 				return nil, err
 			}
 
-			tables[i] = loader.Table{Content: cnt, Tag: loader.Tag(tag)}
+			tables[i] = opentype.Table{Content: cnt, Tag: opentype.Tag(tag)}
 		}
 	}
 
-	return loader.WriteTTF(tables), nil
+	return opentype.WriteTTF(tables), nil
 }
