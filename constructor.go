@@ -149,7 +149,7 @@ func (c *Constructor) Repeater(sectioner Sectioner, options ...NodeOptions) *Rep
 }
 
 // Возвращает экземпляр Watermark. Этот блок рендерится на каждой странице с момента инициализации.
-// В отличие от Header не влияет на расположениение других узлов конструктора.
+// В отличие от Header не влияет на расположение других узлов конструктора.
 func (c *Constructor) Watermark(options ...WatermarkOptions) *Watermark {
 	opts := getOptions(options)
 	alignH, alignV := parseAlignment(opts.Align)
@@ -167,8 +167,8 @@ func (c *Constructor) Watermark(options ...WatermarkOptions) *Watermark {
 	}
 }
 
-// Возвращает экземпляр Paginator. Этот блок рендерится на каждой странице с момента иницализации.
-// Располгается внизу документа в области между нижней границей и нижнем краем страницы.
+// Возвращает экземпляр Paginator. Этот блок рендерится на каждой странице с момента инициализации.
+// Располагается внизу документа в области между нижней границей и нижнем краем страницы.
 // Пишет номер текущей страницы в первую ячейку с ID = 0.
 func (c *Constructor) Paginator(options ...PaginatorOptions) *Paginator {
 	opts := getOptions(options)
@@ -585,7 +585,7 @@ type Slot struct {
 
 type SlotApplier func(slot *Slot)
 
-// Создает дочерний экземпляр блока Block. Если к слоту была добавлена таблица Table, то конструктор вернет ошибку, а блоки не будут отриованы.
+// Создает дочерний экземпляр блока Block. Если к слоту была добавлена таблица Table, то конструктор вернет ошибку, а блоки не будут отрисованы.
 // Ширина слота будет являться шириной самого широкого блока. Высота слота будет суммой высот всех блоков.
 func (s *Slot) Block(options ...NodeOptions) *Block {
 	if s.table != nil {
@@ -611,7 +611,7 @@ func (s *Slot) Block(options ...NodeOptions) *Block {
 	return &s.blocks[len(s.blocks)-1]
 }
 
-// Создает дочерний экзмеляр таблицы Table. Таблица у слота может быть только одна. При потоврном вызове метода, таблица перезапишется на новую.
+// Создает дочерний экземпляр таблицы Table. Таблица у слота может быть только одна. При повторном вызове метода, таблица перезапишется на новую.
 // Для инициализации таблицы необходимо указать количество строк и слайс ширин всех столбцов.
 func (s *Slot) Table(rowsNum uint8, columns []unit.MM, options ...TableOptions) *Table {
 	if len(s.blocks) > 0 {
