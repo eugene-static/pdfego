@@ -15,12 +15,12 @@ func prepareTemplate() (*updTemplate, error) {
 	c.EnableCompression()
 	c.IgnoreImageNotFound()
 
-	err := c.SetFontRegular("../fonts/LiberationSans-Regular.ttf")
+	err := c.SetFontRegular("./fonts/LiberationSans-Regular.ttf")
 	if err != nil {
 		return nil, err
 	}
 
-	err = c.SetFontBold("../fonts/LiberationSans-Bold.ttf")
+	err = c.SetFontBold("./fonts/LiberationSans-Bold.ttf")
 	if err != nil {
 		return nil, err
 	}

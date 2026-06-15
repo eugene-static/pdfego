@@ -104,7 +104,7 @@ func newDTO(detailsNum int) DTO {
 
 	cert := Certificate{
 		SignerName:         "Michael Gary Scott",
-		SignDate:           time.Now().Format("02-01-2006, 15:04"),
+		SignDate:           time.Now().Format("02.01.2006, 15:04"),
 		KEP:                "90379e6a254d4df79c93",
 		ValidityPeriodFrom: "01.01.2025 09:00",
 		ValidityPeriodTo:   "01.01.2028 09:00",
