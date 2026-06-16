@@ -4,9 +4,9 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/eugene-static/pdfego/internal/buffer"
-	"github.com/eugene-static/pdfego/internal/font"
-	"github.com/eugene-static/pdfego/internal/image"
+	"gitlab.wildberries.ru/ovp/ovp/go-infrastructure/pdfego/internal/buffer"
+	"gitlab.wildberries.ru/ovp/ovp/go-infrastructure/pdfego/internal/font"
+	"gitlab.wildberries.ru/ovp/ovp/go-infrastructure/pdfego/internal/image"
 )
 
 const (

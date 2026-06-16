@@ -6,9 +6,10 @@ import (
 	"os"
 	"slices"
 
-	"github.com/eugene-static/pdfego/unit"
 	"golang.org/x/image/font/sfnt"
 	"golang.org/x/image/math/fixed"
+
+	"gitlab.wildberries.ru/ovp/ovp/go-infrastructure/pdfego/unit"
 )
 
 const (

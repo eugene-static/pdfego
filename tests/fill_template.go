@@ -3,8 +3,8 @@ package tests
 import (
 	"fmt"
 
-	"github.com/eugene-static/pdfego"
-	"github.com/eugene-static/pdfego/unit"
+	"gitlab.wildberries.ru/ovp/ovp/go-infrastructure/pdfego"
+	"gitlab.wildberries.ru/ovp/ovp/go-infrastructure/pdfego/unit"
 )
 
 func prepareTemplate() (*updTemplate, error) {
