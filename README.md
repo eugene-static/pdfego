@@ -41,7 +41,7 @@ import (
 	"log"
 	"os"
 
-	"github.com/eugene-static/pdfego"
+	"gitlab.wildberries.ru/ovp/ovp/go-infrastructure/pdfego"
 )
 
 func main() {
