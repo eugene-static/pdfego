@@ -9,7 +9,7 @@ PDFEGO — это конструктор файлов PDF на GO. Констр�
 ## Installation
 
 ~~~
-go get github.com/eugene-static/pdfego
+go get gitlab.wildberries.ru/ovp/ovp/go-infrastructure/pdfego
 ~~~
 
 ## Structure
