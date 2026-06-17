@@ -236,7 +236,7 @@ func (tmpl *updTemplate) tableHeader(block *pdfego.Block) {
 		Cell("Количество\n(объем)", optsBoundedRS2).
 		Cell("Цена\n(тариф) за\nединицу\nизмерения", optsBoundedRS2).
 		Cell("Стоимость\nтоваров (работ,\nуслуг),\nимущественных\nправ без налога -\nвсего", optsBoundedRS2).
-		Cell("В том числе\nсумма\nакциза", optsBoundedRS2).
+		Cell("В том числе сумма акциза", optsBoundedRS2).
 		Cell("Налоговая\nставка", optsBoundedRS2).
 		Cell("Сумма налога,\nпредъявляемая\nпокупателю", optsBoundedRS2).
 		Cell("Стоимость\nтоваров (работ,\nуслуг),\nимущественных\nправ с налогом -\nвсего", optsBoundedRS2).
@@ -245,7 +245,7 @@ func (tmpl *updTemplate) tableHeader(block *pdfego.Block) {
 
 	table.Row().
 		Cell("код", optsBounded).
-		Cell("условное\nобозна-\nчение\n(нацио-\nнальное)", optsBounded).
+		Cell("условное обозна-\nчение\n(нацио-\nнальное)", optsBounded).
 		Cell("цифро-\nвой\nкод", optsBounded).
 		Cell("краткое\nнаимено-\nвание", optsBounded)
 }

@@ -293,9 +293,13 @@ func (f *Font) SplitText(text string, size unit.PT, width unit.MM, buf []Text) [
 				width: textWidth.MM(),
 			})
 
+			textWidth = candidateWidth - textWidth
+			if f.manager.textBuffer[lineEnd] == splitSpace {
+				textWidth -= f.manager.glyphWidth(splitSpace, size)
+			}
+
 			lineStart = wordStart
 			lineEnd = wordEnd
-			textWidth = candidateWidth - textWidth
 
 			continue
 		}
@@ -390,6 +394,20 @@ func (mgr *fontManager) glyph(r rune) (Glyph, bool) {
 	gl, ok := mgr.glyphsSlowCache[r]
 
 	return gl, ok
+}
+
+func (mgr *fontManager) glyphWidth(r rune, size unit.PT) unit.PT {
+	gl, ok := mgr.glyph(r)
+	if !ok {
+		return 0
+	}
+
+	fontSizeEm := size.FixedI()
+	advance := gl.advance.Mul(fontSizeEm)
+
+	width := unit.PT(float64(advance) / float64(ppem))
+
+	return width
 }
 
 func (mgr *fontManager) wrapSymbols(index int) bool {

@@ -198,11 +198,11 @@ func (core *Core) AddImage(data []byte, alias string) error {
 	return nil
 }
 
-func (core *Core) defaultFontSize() unit.PT {
+func (core *Core) DefaultFontSize() unit.PT {
 	return core.fontSize
 }
 
-func (core *Core) defaultBorderSize() unit.PT {
+func (core *Core) DefaultBorderSize() unit.PT {
 	return core.borderSize
 }
 

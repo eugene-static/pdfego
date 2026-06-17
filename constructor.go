@@ -293,7 +293,7 @@ func (b *Block) render(buf *buffer.Buffer, x, y unit.MM) {
 	if b.border > 0 {
 		width := b.width()
 		height := b.height()
-		borderSize := coalesce(b.borderSize, b.core.defaultBorderSize())
+		borderSize := coalesce(b.borderSize, b.core.DefaultBorderSize())
 
 		renderBorder(buf, x, y, width, height, b.border, borderSize)
 	}
@@ -658,7 +658,7 @@ func (s *Slot) render(buf *buffer.Buffer, x, y unit.MM) {
 	if s.border > 0 {
 		width := s.width()
 		height := s.height()
-		borderSize := coalesce(s.borderSize, s.core.defaultBorderSize())
+		borderSize := coalesce(s.borderSize, s.core.DefaultBorderSize())
 
 		renderBorder(buf, x, y, width, height, s.border, borderSize)
 	}
@@ -799,7 +799,7 @@ func (t *Table) render(buf *buffer.Buffer, x, y unit.MM) {
 
 		width := t.width()
 		height := t.height()
-		borderSize := coalesce(t.borderSize, t.core.defaultBorderSize())
+		borderSize := coalesce(t.borderSize, t.core.DefaultBorderSize())
 
 		renderBorder(buf, x, y, width, height, t.border, borderSize)
 	}
@@ -1031,7 +1031,7 @@ func (r *Row) Underscore(text string, options ...CellOptions) *Row {
 	opts := getOptions(options)
 
 	opts.Align = coalesce(opts.Align, "CT")
-	opts.FontSize = coalesce(opts.FontSize, r.core.defaultFontSize().Sub(1))
+	opts.FontSize = coalesce(opts.FontSize, r.core.DefaultFontSize().Sub(1))
 
 	r.newCell(text, defaultCell, opts)
 
@@ -1043,7 +1043,7 @@ func (r *Row) UnderscoreSpan(text string, colspan uint8, options ...CellOptions)
 	opts := getOptions(options)
 
 	opts.Align = coalesce(opts.Align, "CT")
-	opts.FontSize = coalesce(opts.FontSize, r.core.defaultFontSize().Sub(1))
+	opts.FontSize = coalesce(opts.FontSize, r.core.DefaultFontSize().Sub(1))
 	opts.Colspan = colspan
 
 	r.newCell(text, defaultCell, opts)
@@ -1094,7 +1094,7 @@ func (r *Row) newCell(text string, profile uint8, options CellOptions) {
 	c.textColor = options.TextColor
 	c.borderColor = options.BorderColor
 	c.border = parseBorder(options.Border)
-	c.borderSize = coalesce(options.BorderSize, r.core.defaultBorderSize())
+	c.borderSize = coalesce(options.BorderSize, r.core.DefaultBorderSize())
 	c.colspan = coalesce(options.Colspan, 1)
 	c.rowspan = coalesce(options.Rowspan, 1)
 	c.width = r.cellWidth(c.colspan)
@@ -1112,7 +1112,7 @@ func (r *Row) newCell(text string, profile uint8, options CellOptions) {
 	if text != "" {
 		c.wrapped = options.Wrap
 		c.alignH, c.alignV = parseAlignment(options.Align)
-		c.fontSize = coalesce(options.FontSize, r.core.defaultFontSize())
+		c.fontSize = coalesce(options.FontSize, r.core.DefaultFontSize())
 		c.font = r.core.font(coalesce(options.Font, FontRegular))
 		c.textLines = make([]font.Text, 0, 10)
 
