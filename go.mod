@@ -1,4 +1,4 @@
-module gitlab.wildberries.ru/ovp/ovp/go-infrastructure/pdfego
+module github.com/eugene-static/pdfego
 
 go 1.26.3
 

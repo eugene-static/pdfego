@@ -9,7 +9,7 @@ import (
 	"golang.org/x/image/font/sfnt"
 	"golang.org/x/image/math/fixed"
 
-	"gitlab.wildberries.ru/ovp/ovp/go-infrastructure/pdfego/unit"
+	"github.com/eugene-static/pdfego/unit"
 )
 
 const (

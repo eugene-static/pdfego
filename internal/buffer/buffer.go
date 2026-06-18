@@ -5,8 +5,8 @@ import (
 	"slices"
 	"strconv"
 
-	"gitlab.wildberries.ru/ovp/ovp/go-infrastructure/pdfego/internal/font"
-	"gitlab.wildberries.ru/ovp/ovp/go-infrastructure/pdfego/unit"
+	"github.com/eugene-static/pdfego/internal/font"
+	"github.com/eugene-static/pdfego/unit"
 )
 
 const DefaultSize = 1 << 16

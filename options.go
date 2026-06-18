@@ -1,8 +1,8 @@
 package pdfego
 
 import (
-	"gitlab.wildberries.ru/ovp/ovp/go-infrastructure/pdfego/internal/buffer"
-	"gitlab.wildberries.ru/ovp/ovp/go-infrastructure/pdfego/unit"
+	"github.com/eugene-static/pdfego/internal/buffer"
+	"github.com/eugene-static/pdfego/unit"
 )
 
 const (
