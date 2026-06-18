@@ -1,0 +1,4 @@
+include:
+    - project: 'ovp/ovp/go-infrastructure/pdfego'
+      ref: 'master'
+      file: /pipelines/go-lib.yml
