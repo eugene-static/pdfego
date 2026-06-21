@@ -34,7 +34,7 @@ func TestUPD_FillTemplate(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	template.dto = newDTO(1)
+	template.dto = newDTO(100)
 
 	var memBefore runtime.MemStats
 	runtime.ReadMemStats(&memBefore)

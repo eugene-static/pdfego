@@ -248,11 +248,11 @@ func (core *Core) writeImage(img *image.Image) int {
 
 	var alphaObjNum int
 
-	alphaBytes, ok := img.Alpha()
+	alphaBytes, compressed := img.Alpha()
 	if alphaBytes != nil {
 		alphaObjNum = core.newObject()
 
-		if !ok {
+		if !compressed {
 			compBytes, err := core.comp.compress(alphaBytes)
 			if err != nil {
 				core.setError(err)
@@ -291,8 +291,8 @@ func (core *Core) writeImage(img *image.Image) int {
 
 	objNum := core.newObject()
 
-	imageBytes, ok := img.RGB()
-	if !ok {
+	imageBytes, compressed := img.RGB()
+	if !compressed {
 		compressedBytes, err := core.comp.compress(imageBytes)
 		if err != nil {
 			core.setError(err)
@@ -336,6 +336,50 @@ func (core *Core) writeImage(img *image.Image) int {
 	return objNum
 }
 
+func (core *Core) writeWatermark() {
+	if core.err() != nil {
+		return
+	}
+
+	b := core.mainBuffer
+	objNum := core.newObject()
+
+	b.StartObj(objNum)
+	b.OpenObjectParameters()
+
+	watermarkBytes := core.page.watermark.buffer.Bytes()
+	length := core.page.watermark.buffer.Len()
+
+	if core.compress {
+		compressed, err := core.comp.compress(watermarkBytes)
+		if err != nil {
+			core.setError(err)
+
+			return
+		}
+
+		watermarkBytes = compressed
+		length = len(compressed)
+		b.WriteFieldString("/Filter", "/FlateDecode")
+	}
+
+	b.WriteFieldInt("/Length", length)
+	b.CloseObjectParameters()
+	b.StartStream()
+
+	_, err := b.Write(watermarkBytes)
+	if err != nil {
+		core.setError(err)
+
+		return
+	}
+
+	b.EndStream()
+	b.EndObj()
+
+	core.page.watermark.objNum = objNum
+}
+
 func (core *Core) writePages() {
 	if core.err() != nil {
 		return
@@ -363,12 +407,17 @@ func (core *Core) writePage() {
 	b := core.mainBuffer
 	pageObjNum := core.newObject()
 
+	contents := []int{pageObjNum + 1}
+	if core.page.watermark.objNum > 0 {
+		contents = append(contents, core.page.watermark.objNum)
+	}
+
 	b.StartObj(pageObjNum)
 	b.OpenObjectParameters()
 	b.WriteFieldString("/Type", "/Page")
 	b.WriteRef("/Parent", 1)
 	b.WriteRef("/Resources", 2)
-	b.WriteRef("/Contents", pageObjNum+1)
+	b.WriteRefArray("/Contents", contents)
 	b.CloseObjectParameters()
 	b.EndObj()
 

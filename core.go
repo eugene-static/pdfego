@@ -290,15 +290,6 @@ func (core *Core) renderPage() {
 		return
 	}
 
-	if core.page.watermarkBuffer != nil && core.page.watermarkBuffer.Len() > 0 {
-		_, err := core.page.buffer.Write(core.page.watermarkBuffer.Bytes())
-		if err != nil {
-			core.setError(err)
-
-			return
-		}
-	}
-
 	if core.page.buffer.Len() > 0 {
 		core.writePage()
 
@@ -316,6 +307,7 @@ type page struct {
 	buffer          *buffer.Buffer
 	headerBuffer    *buffer.Buffer
 	watermarkBuffer *buffer.Buffer
+	watermark       watermark
 	objects         []int
 	count           int
 	width           unit.MM
@@ -367,22 +359,22 @@ func (p *page) releaseHeader() {
 }
 
 func (p *page) newWatermark() *buffer.Buffer {
-	if p.watermarkBuffer != nil {
-		p.watermarkBuffer.Reset()
+	if p.watermark.buffer != nil {
+		p.watermark.buffer.Reset()
 
-		return p.watermarkBuffer
+		return p.watermark.buffer
 	}
 
 	buf := buffer.New(buffer.DefaultSize)
 
-	p.watermarkBuffer = buf
+	p.watermark.buffer = buf
 
 	return buf
 }
 
 func (p *page) releaseWatermark() {
-	if p.watermarkBuffer != nil {
-		p.watermarkBuffer.Reset()
+	if p.watermark.buffer != nil {
+		p.watermark.buffer.Reset()
 	}
 }
 
@@ -391,6 +383,11 @@ func (p *page) reset() {
 	p.releaseHeader()
 	p.count = 0
 	p.objects = p.objects[:0]
+}
+
+type watermark struct {
+	buffer *buffer.Buffer
+	objNum int
 }
 
 type compressor struct {

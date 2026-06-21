@@ -482,6 +482,7 @@ func (w *Watermark) Apply(applier BlockApplier) {
 	dy := w.dy()
 
 	w.block.render(w.buf, w.x0+dx, w.y0+dy)
+	w.block.core.writeWatermark()
 }
 
 func (w *Watermark) dx() (dx unit.MM) {
