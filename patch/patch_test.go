@@ -12,48 +12,38 @@ func Test_ExtractParametersReferenceObjectNumbers(t *testing.T) {
 		want parameterReference
 	}{
 		{
-			name: "/Kids_1",
+			name: "Kids_1",
 			body: []byte("<</Type/Pages/Count 2/Kids_1[ 3 0 R 28 0 R] >>"),
 			want: parameterReference{
-				startIndex:    21,
-				endIndex:      43,
+				start:         21,
+				end:           43,
 				objectNumbers: []int{3, 28},
 			},
 		},
 		{
-			name: "/Kids_2",
+			name: "Kids_2",
 			body: []byte("<</Type/Pages/Kids_2[ 21 0 R ]/Count 1>>"),
 			want: parameterReference{
-				startIndex:    13,
-				endIndex:      30,
+				start:         13,
+				end:           30,
 				objectNumbers: []int{21},
 			},
 		},
 		{
-			name: "/Kids_3",
+			name: "Kids_3",
 			body: []byte("<</Type /Pages/Count 2/Kids_3[5 0 R 16 0 R ]/Resources<</Font<</FAAAAJ 9 0 R/FAAABD 13 0 R>>/XObject<</X1 7 0 R/X2 18 0 R>>>>>>"),
 			want: parameterReference{
-				startIndex:    22,
-				endIndex:      44,
+				start:         22,
+				end:           44,
 				objectNumbers: []int{5, 16},
 			},
 		},
 		{
-			name: "/Resources",
-			body: []byte(`
-				<<
-				/Contents [ 26 0 R ]
-				/CropBox [ 0.0 0.0 595.32001 841.92004 ]
-				/MediaBox [ 0.0 0.0 595.32001 841.92004 ]
-				/Parent 2 0 R
-				/Resources 27 0 R
-				/Rotate 0
-				/Type /Page
-				>>
-			`),
+			name: "Resources",
+			body: []byte("<<\n/Contents [ 26 0 R ]\n/CropBox [ 0.0 0.0 595.32001 841.92004 ]\n/MediaBox [ 0.0 0.0 595.32001 841.92004 ]\n/Parent 2 0 R\n/Resources 27 0 R\n/Rotate 0\n/Type /Page\n>>\n"),
 			want: parameterReference{
-				startIndex:    146,
-				endIndex:      163,
+				start:         121,
+				end:           139,
 				objectNumbers: []int{27},
 			},
 		},
@@ -61,7 +51,7 @@ func Test_ExtractParametersReferenceObjectNumbers(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			got, err := extractParametersReferenceObjectNumbers(test.body, 0, test.name)
+			got, err := parseParametersReference(test.body, test.name)
 			if err != nil {
 				t.Error(err)
 
@@ -72,16 +62,16 @@ func Test_ExtractParametersReferenceObjectNumbers(t *testing.T) {
 				t.Errorf("want: %v, got: %v", test.want, got)
 			}
 
-			if test.want.startIndex != got.startIndex {
+			if test.want.start != got.start {
 				t.Errorf("want: %v, got: %v", test.want, got)
 			}
 
-			if test.want.endIndex != got.endIndex {
+			if test.want.end != got.end {
 				t.Errorf("want: %v, got: %v", test.want, got)
 			}
 
 			t.Logf("Parameter: %v", got)
-			t.Logf("Concat: %s", test.body[got.startIndex:got.endIndex])
+			t.Logf("Concat: %s", test.body[got.start:got.end])
 		})
 	}
 }
