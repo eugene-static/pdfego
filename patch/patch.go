@@ -16,11 +16,13 @@ const (
 	refTail                       = " 0 R"
 	endobj                        = "endobj"
 	regexParameterReferenceLayout = `/%s\s*\[*(\s*\d+\s\d\sR)+\s*(]|)`
+	regexParameterArrayLayout     = `/%s+\s*\[\s*(.+)\s*]`
 )
 
 var (
 	regexStartXref = regexp.MustCompile(`startxref\s*(\d+)\s*%%EOF`)
 	regexReference = regexp.MustCompile(`\s*(\d+)\s\d\sR+\s*`)
+	regexArray     = regexp.MustCompile(`[\s*(.+)\s*]`)
 )
 
 type Patcher struct {
@@ -30,6 +32,7 @@ type Patcher struct {
 	catalog   *object
 	pages     *object
 	pagesKids []*object
+	resources *object
 	xref      *xref
 	trailer   *trailer
 }
@@ -127,7 +130,7 @@ func (p *Patcher) parse() error {
 func (p *Patcher) parseTrailer() (int, error) {
 	trailerIndex := bytes.LastIndex(p.data, []byte("trailer"))
 	if trailerIndex == -1 {
-		err := errors.New("не удалось найти trailer")
+		err := errNotFound("trailer")
 
 		return 0, err
 	}
@@ -136,7 +139,7 @@ func (p *Patcher) parseTrailer() (int, error) {
 
 	xrefValue := regexStartXref.FindSubmatch(trailerBody)
 	if len(xrefValue) == 0 {
-		err := errors.New("не удалось найти startxref")
+		err := errNotFound("startxref")
 
 		return 0, err
 	}
@@ -161,7 +164,7 @@ func (p *Patcher) parseXref(index int) error {
 		return err
 	}
 
-	sum := bytes.Split(lines[1], []byte(" "))
+	sum := bytes.Fields(lines[1])
 	if len(sum) != 2 {
 		err := errors.New("неверный формат суммы xref")
 
@@ -180,7 +183,7 @@ func (p *Patcher) parseXref(index int) error {
 	objectsIndexes := make([]int, 0, count)
 
 	for i := 2; i < len(lines); i++ {
-		ref := bytes.Split(lines[i], []byte(" "))
+		ref := bytes.Fields(lines[i])
 		if len(ref) != 3 {
 			err := errors.New("неверный формат таблицы xref")
 
@@ -205,7 +208,7 @@ func (p *Patcher) parseXref(index int) error {
 func (p *Patcher) getObject(name string, number int) (*object, error) {
 	startIndex := p.xref.getObjectIndex(number)
 	if startIndex == -1 {
-		err := fmt.Errorf("не удалось найти объект %s_%d", name, number)
+		err := errNotFound(fmt.Sprintf("%s_%d", name, number))
 
 		return nil, err
 	}
@@ -234,23 +237,23 @@ func parseParametersReference(body []byte, parameterName string) (parameterRefer
 		return parameterReference{}, err
 	}
 
-	paramBodyCoordinates := regex.FindIndex(body)
-	if len(paramBodyCoordinates) == 0 {
-		err = fmt.Errorf("не удалось найти параметр %s", parameterName)
+	paramBodyBounds := regex.FindIndex(body)
+	if len(paramBodyBounds) == 0 {
+		err = errNotFound(parameterName)
 
 		return parameterReference{}, err
 	}
 
-	references := regexReference.FindAllSubmatch(body[paramBodyCoordinates[0]:paramBodyCoordinates[1]], -1)
-	if len(references) == 0 {
-		err = fmt.Errorf("неверный формат ссылок параметра %s", parameterName)
+	paramValue := regexReference.FindAllSubmatch(body[paramBodyBounds[0]:paramBodyBounds[1]], -1)
+	if len(paramValue) == 0 {
+		err = errInvalidFormat(parameterName)
 
 		return parameterReference{}, err
 	}
 
-	objectNumbers := make([]int, 0, len(references))
+	objectNumbers := make([]int, 0, len(paramValue))
 
-	for _, reference := range references {
+	for _, reference := range paramValue {
 		objectNumber := bytesToInt(reference[1])
 
 		objectNumbers = append(objectNumbers, objectNumber)
@@ -259,8 +262,51 @@ func parseParametersReference(body []byte, parameterName string) (parameterRefer
 	param := parameterReference{
 		name:          parameterName,
 		objectNumbers: objectNumbers,
-		start:         paramBodyCoordinates[0],
-		end:           paramBodyCoordinates[1],
+		start:         paramBodyBounds[0],
+		end:           paramBodyBounds[1],
+	}
+
+	return param, nil
+}
+
+func parseParametersArray(body []byte, parameterName string) (parameterArray, error) {
+	regex, err := regexp.Compile(fmt.Sprintf(regexParameterArrayLayout, parameterName))
+	if err != nil {
+		return parameterArray{}, err
+	}
+
+	paramBodyBounds := regex.FindIndex(body)
+	if paramBodyBounds == nil {
+		err = errNotFound(parameterName)
+
+		return parameterArray{}, err
+	}
+
+	paramValue := regex.FindSubmatch(body[paramBodyBounds[0]:paramBodyBounds[1]])
+	if paramValue == nil {
+		err = errInvalidFormat(parameterName)
+
+		return parameterArray{}, err
+	}
+
+	arrayElements := bytes.Fields(paramValue[1])
+
+	floatArray := make([]float64, 0, len(arrayElements))
+
+	for _, element := range arrayElements {
+		float, err := strconv.ParseFloat(string(element), 64)
+		if err != nil {
+			return parameterArray{}, err
+		}
+
+		floatArray = append(floatArray, float)
+	}
+
+	param := parameterArray{
+		name:  parameterName,
+		array: floatArray,
+		start: paramBodyBounds[0],
+		end:   paramBodyBounds[1],
 	}
 
 	return param, nil
@@ -324,6 +370,34 @@ type parameterArray struct {
 	array []float64
 	start int
 	end   int
+}
+
+type notFoundError struct {
+	parameter string
+}
+
+func (e notFoundError) Error() string {
+	return "не удалось найти " + e.parameter
+}
+
+func errNotFound(parameter string) error {
+	err := notFoundError{parameter}
+
+	return err
+}
+
+type invalidFormatError struct {
+	parameter string
+}
+
+func (e invalidFormatError) Error() string {
+	return "неверный формат параметра " + e.parameter
+}
+
+func errInvalidFormat(parameter string) error {
+	err := invalidFormatError{parameter}
+
+	return err
 }
 
 func validate(rs *bufio.Reader) error {
