@@ -399,15 +399,30 @@ func (core *Core) writePages() {
 	b.EndObj()
 }
 
-func (core *Core) writePage() {
+func (core *Core) writeUpdatedPages(pages *object) {
 	if core.err() != nil {
 		return
 	}
 
 	b := core.mainBuffer
+
+	objNum := core.newObject()
+
+	b.StartObj(objNum)
+
+}
+
+func (core *Core) writePage() {
+	if core.err() != nil {
+		return
+	}
+
+	contentsObjNum := core.writeContents()
 	pageObjNum := core.newObject()
 
-	contents := []int{pageObjNum + 1}
+	b := core.mainBuffer
+
+	contents := []int{contentsObjNum}
 	if core.page.watermark.objNum > 0 {
 		contents = append(contents, core.page.watermark.objNum)
 	}
@@ -420,6 +435,70 @@ func (core *Core) writePage() {
 	b.WriteRefArray("/Contents", contents)
 	b.CloseObjectParameters()
 	b.EndObj()
+
+	core.page.objects = append(core.page.objects, pageObjNum)
+}
+
+//func (core *Core) writeUpdatedPage(page *object, contents []int) {
+//	if core.err() != nil {
+//		return
+//	}
+//
+//	type param struct {
+//		name  string
+//		value parameter
+//	}
+//
+//	params := make([]param, 0, len(page.parameters))
+//
+//	for name, value := range page.parameters {
+//		params = append(params, param{name, value})
+//	}
+//
+//	sort.Slice(params, func(i, j int) bool {
+//		iStart, _ := params[i].value.bounds()
+//		jStart, _ := params[j].value.bounds()
+//
+//		return iStart < jStart
+//	})
+//
+//	b := core.mainBuffer
+//	pageObjNum := core.newObject()
+//
+//	b.StartObj(pageObjNum)
+//	b.OpenObjectParameters()
+//
+//	pos := 0
+//
+//	for _, p := range params {
+//		start, end := p.value.bounds()
+//
+//		if start < pos {
+//			continue
+//		}
+//
+//		if start > len(page.body) {
+//			break
+//		}
+//
+//		if end > len(page.body) {
+//			end = len(page.body)
+//		}
+//
+//		b.Write(page.body[pos:start])
+//
+//		if p.value.title() == "Contents" {
+//
+//		}
+//	}
+//}
+
+func (core *Core) writeContents() int {
+	if core.err() != nil {
+		return 0
+	}
+
+	b := core.mainBuffer
 
 	objNum := core.newObject()
 
@@ -434,7 +513,7 @@ func (core *Core) writePage() {
 		if err != nil {
 			core.setError(err)
 
-			return
+			return 0
 		}
 
 		pageBytes = compressed
@@ -450,13 +529,13 @@ func (core *Core) writePage() {
 	if err != nil {
 		core.setError(err)
 
-		return
+		return 0
 	}
 
 	b.EndStream()
 	b.EndObj()
 
-	core.page.objects = append(core.page.objects, pageObjNum)
+	return objNum
 }
 
 func (core *Core) writeFileHeader() {
