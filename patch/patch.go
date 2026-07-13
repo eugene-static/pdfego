@@ -1,11 +1,10 @@
-package pdfego
+package patch
 
 import (
 	"bufio"
 	"bytes"
 	"errors"
 	"fmt"
-	"regexp"
 
 	"github.com/eugene-static/pdfego/internal/buffer"
 )
@@ -15,12 +14,7 @@ const (
 	endobj  = "endobj"
 )
 
-var (
-	regexStartXref = regexp.MustCompile(`startxref\s*(\d+)\s*%%EOF`)
-)
-
 type Patcher struct {
-	core      *Core
 	data      []byte
 	buffer    *buffer.Buffer
 	catalog   *object
@@ -31,28 +25,28 @@ type Patcher struct {
 	trailer   *trailer
 }
 
-func NewPatcher(core *Core) *Patcher {
+func NewPatcher() *Patcher {
 	return &Patcher{
-		core: core,
+		//core: core,
 	}
 }
 
-func (p *Patcher) Watermark(options ...WatermarkOptions) *Watermark {
-	opts := getOptions(options)
-	alignH, alignV := parseAlignment(opts.Align)
-	x0, y0 := p.core.page.x0y0()
-
-	return &Watermark{
-		block: &Block{
-			core: p.core,
-		},
-		buf:    p.core.page.newWatermark(),
-		x0:     x0,
-		y0:     y0,
-		alignH: alignH,
-		alignV: alignV,
-	}
-}
+//func (p *Patcher) Watermark(options ...pdfego.WatermarkOptions) *pdfego.Watermark {
+//	opts := pdfego.getOptions(options)
+//	alignH, alignV := pdfego.parseAlignment(opts.Align)
+//	x0, y0 := p.core.page.x0y0()
+//
+//	return &pdfego.Watermark{
+//		block: &pdfego.Block{
+//			core: p.core,
+//		},
+//		buf:    p.core.page.newWatermark(),
+//		x0:     x0,
+//		y0:     y0,
+//		alignH: alignH,
+//		alignV: alignV,
+//	}
+//}
 
 func (p *Patcher) Patch(data []byte) error {
 	rs := bytes.NewReader(data)
@@ -150,6 +144,19 @@ func (p *Patcher) parse() error {
 	return nil
 }
 
+// идем по каждой странице
+// ищем ресурсы. Если нашли, смотрим тип. Если инлайн, патчим инлайн ресурсы.
+// если объект, находим объект, патчим объект, пишем объект в буфер, забираем его номер, аптдейтим ссылку на ресурсы
+// находим /Font. Если инлайн, патчим /OVPWMFONT1 99 0 R.
+// если объект, находим объект, патчим объект, пишем в буфер, забираем номер, апдейтим ссылку на шрифт.
+// если мы достали шрифт, у которого уже есть UpdatedID, значит он заполнен, и мы просто апдейтим ссылку на него.
+
+type объект struct {
+	InitialID  int
+	UpdatedID  int
+	Dictionary *dictionary
+}
+
 func (p *Patcher) getResources() (object, error) {
 	resourcesParameters := make(map[string][]byte)
 
@@ -212,16 +219,16 @@ func (p *Patcher) resolve(parameter parameter) (dictionary, error) {
 	return obj.dictionary, nil
 }
 
-func (p *Patcher) prepare() error {
-	p.core.offsets = p.xref.offsets
-
-	_, err := p.core.mainBuffer.Write(p.data)
-	if err != nil {
-		return err
-	}
-
-	return nil
-}
+//func (p *Patcher) prepare() error {
+//	p.core.offsets = p.xref.offsets
+//
+//	_, err := p.core.mainBuffer.Write(p.data)
+//	if err != nil {
+//		return err
+//	}
+//
+//	return nil
+//}
 
 func (p *Patcher) patch() error {
 	return nil

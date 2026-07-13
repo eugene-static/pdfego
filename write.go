@@ -399,7 +399,7 @@ func (core *Core) writePages() {
 	b.EndObj()
 }
 
-func (core *Core) writeUpdatedPages(pages *object) {
+func (core *Core) writeUpdatedPages() {
 	if core.err() != nil {
 		return
 	}

@@ -1,4 +1,4 @@
-package pdfego
+package patch
 
 import (
 	"slices"
