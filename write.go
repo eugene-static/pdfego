@@ -76,14 +76,17 @@ func (core *Core) writeResources() {
 	}
 
 	b.CloseObjectParameters()
-	b.WriteFieldString("/XObject", "")
-	b.OpenObjectParameters()
 
-	for _, res := range imageResources {
-		b.WriteRef("/"+res.alias, res.objNum)
+	if len(imageResources) > 0 {
+		b.WriteFieldString("/XObject", "")
+		b.OpenObjectParameters()
+
+		for _, res := range imageResources {
+			b.WriteRef("/"+res.alias, res.objNum)
+		}
+
+		b.CloseObjectParameters()
 	}
-
-	b.CloseObjectParameters()
 
 	b.CloseObjectParameters()
 	b.EndObj()
