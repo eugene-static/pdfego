@@ -127,25 +127,33 @@ func (b *Buffer) WriteImage(x, y, w, h unit.MM, alias string) {
 func (b *Buffer) WriteGlyphWidthTable(glyphs []font.Glyph) {
 	b.writeString("/W [")
 
-	prev := uint16(0)
-	for _, gl := range glyphs {
+	if len(glyphs) == 0 {
+		b.writeString("]\n")
+
+		return
+	}
+
+	start := glyphs[0].Index()
+
+	b.writeUint16(start)
+	b.writeString(" [")
+	b.writeInt(glyphs[0].Advance())
+
+	prev := start
+
+	for _, gl := range glyphs[1:] {
 		index := gl.Index()
 		advance := gl.Advance()
 
 		if index == prev+1 {
-			b.writeString(" ")
+			b.space()
 			b.writeInt(advance)
-
-			continue
-		}
-
-		if prev > 0 {
+		} else {
 			b.writeString("] ")
+			b.writeUint16(index)
+			b.writeString(" [")
+			b.writeInt(advance)
 		}
-
-		b.writeUint16(index)
-		b.writeString(" [")
-		b.writeInt(advance)
 
 		prev = index
 	}
