@@ -1,7 +1,8 @@
 package pdfego
 
 import (
-	"github.com/eugene-static/pdfego/internal/buffer"
+	"github.com/eugene-static/pdfego/internal/components/stream"
+	"github.com/eugene-static/pdfego/internal/components/stream/primitives"
 	"github.com/eugene-static/pdfego/unit"
 )
 
@@ -25,6 +26,11 @@ const (
 	alignM = alignC
 	alignT = alignL
 	alignB = alignR
+)
+
+const (
+	placementTop = iota
+	placementBottom
 )
 
 // Здесь подробно описано каждое поле настроек.
@@ -70,7 +76,7 @@ const (
 //
 //	.Cell("Универсальный\nпередаточный\nдокумент", CellOptions{ Wrap: true })
 //
-// Placeholder -- текст, используемый в случаях, когда текст ячейки пуст, или изображение не найдено.
+// Placeholder -- текст, используемый в случаях, когда изображение не найдено.
 //
 // Scale -- масштаб изображения.
 // Задается числом с плавающей запятой.
@@ -114,6 +120,11 @@ const (
 // ID -- идентификатор ячейки.
 //
 // Offset -- начальная точка отсчета.
+//
+// Skip -- количество страниц, которые необходимо пропустить, перед началом печати ее номера.
+//
+// Placement -- размещение блока на странице. В настоящее время применяется только для пагинации.
+// Значения: "T", "B".
 type Options interface {
 	CellOptions | NodeOptions | TableOptions | RowOptions | WatermarkOptions | PaginatorOptions
 }
@@ -138,8 +149,10 @@ type WatermarkOptions struct {
 // PaginatorOptions используется для настройки параметров пагинатора Paginator.
 // Подробное описание всех полей здесь: Options.
 type PaginatorOptions struct {
-	Offset int
-	Align  string
+	Offset    int
+	Skip      uint
+	Align     string
+	Placement string
 }
 
 // TableOptions используется для настройки параметров таблицы Table.
@@ -164,9 +177,6 @@ type RowOptions struct {
 // CellOptions используется для настройки параметров ячейки.
 // Подробное описание всех полей здесь: Options.
 type CellOptions struct {
-	ID          uint8
-	Colspan     uint8
-	Rowspan     uint8
 	Align       string
 	Border      string
 	Font        string
@@ -179,8 +189,35 @@ type CellOptions struct {
 	FontSize    unit.PT
 	TextColor   Color
 	BorderColor Color
+	ID          uint8
+	Colspan     uint8
+	Rowspan     uint8
+	UnderLine   bool
 	Wrap        bool
 }
+
+type mode uint8
+
+const (
+	skipMode mode = iota
+	textMode
+	imageMode
+	counterMode
+)
+
+const (
+	orderMode mode = iota
+	iteratorMode
+)
+
+func (m mode) is(m2 mode) bool {
+	return m == m2
+}
+
+const (
+	zeroIndex          uint8   = 255
+	borderSizeModified unit.PT = 3
+)
 
 func getOptions[T Options](opts []T) T {
 	var opt T
@@ -192,75 +229,66 @@ func getOptions[T Options](opts []T) T {
 	return opt
 }
 
-func renderBorder(buf *buffer.Buffer, x, y, w, h unit.MM, borderMask uint8, borderSize unit.PT) {
-	var x0, y0, x1, y1 unit.MM
-
+func renderBorder(dst *stream.Stream, cursor unit.Point, w, h unit.MM, borderMask uint8, borderSize unit.PT) {
 	if borderMask&borderAll == borderAll && (borderMask^borderAll == thickAll || borderMask^borderAll == 0) {
-		bs := borderSize
-		if borderMask&thickAll == thickAll {
-			bs *= 3
-		}
+		bs := getBorderSize(borderSize, borderMask, thickAll)
+		start := primitives.NewPoint(cursor.X().PT(), cursor.Y().PT().Abs())
+		size := primitives.NewSize(w.PT(), h.Neg().PT())
 
-		buf.WriteRect(bs, x, y, w, h)
+		primitives.
+			NewRect(bs, start, size).
+			WriteToStream(dst)
 
 		return
 	}
 
 	if borderMask&borderLeft != 0 {
-		bs := borderSize
-		if borderMask&thickLeft != 0 {
-			bs *= 3
-		}
+		bs := getBorderSize(borderSize, borderMask, thickLeft)
+		start := primitives.NewPoint(cursor.X().PT(), cursor.Y().PT().Abs())
+		end := primitives.NewPoint(cursor.X().PT(), cursor.Y().Add(h).PT().Abs())
 
-		x0 = x
-		y0 = y
-		x1 = x0
-		y1 = y + h
-
-		buf.WriteLine(bs, x0, y0, x1, y1)
+		primitives.
+			NewLine(bs, start, end).
+			WriteToStream(dst)
 	}
 
 	if borderMask&borderRight != 0 {
-		bs := borderSize
-		if borderMask&thickRight != 0 {
-			bs *= 3
-		}
+		bs := getBorderSize(borderSize, borderMask, thickRight)
+		start := primitives.NewPoint(cursor.X().Add(w).PT(), cursor.Y().PT().Abs())
+		end := primitives.NewPoint(cursor.X().Add(w).PT(), cursor.Y().Add(h).PT().Abs())
 
-		x0 = x + w
-		y0 = y
-		x1 = x0
-		y1 = y + h
-
-		buf.WriteLine(bs, x0, y0, x1, y1)
+		primitives.
+			NewLine(bs, start, end).
+			WriteToStream(dst)
 	}
 
 	if borderMask&borderTop != 0 {
-		bs := borderSize
-		if borderMask&thickTop != 0 {
-			bs *= 3
-		}
+		bs := getBorderSize(borderSize, borderMask, thickTop)
+		start := primitives.NewPoint(cursor.X().PT(), cursor.Y().PT().Abs())
+		end := primitives.NewPoint(cursor.X().Add(w).PT(), cursor.Y().PT().Abs())
 
-		x0 = x
-		y0 = y
-		x1 = x + w
-		y1 = y
-
-		buf.WriteLine(bs, x0, y0, x1, y1)
+		primitives.
+			NewLine(bs, start, end).
+			WriteToStream(dst)
 	}
 
 	if borderMask&borderBottom != 0 {
-		bs := borderSize
-		if borderMask&thickBottom != 0 {
-			bs *= 3
-		}
+		bs := getBorderSize(borderSize, borderMask, thickBottom)
+		start := primitives.NewPoint(cursor.X().PT(), cursor.Y().Add(h).PT().Abs())
+		end := primitives.NewPoint(cursor.X().Add(w).PT(), cursor.Y().Add(h).PT().Abs())
 
-		x0 = x
-		y0 = y + h
-		x1 = x + w
-		y1 = y0
-
-		buf.WriteLine(bs, x0, y0, x1, y1)
+		primitives.
+			NewLine(bs, start, end).
+			WriteToStream(dst)
 	}
+}
+
+func getBorderSize(bs unit.PT, bMask, size uint8) unit.PT {
+	if bMask&size != 0 {
+		bs *= borderSizeModified
+	}
+
+	return bs
 }
 
 func parseBorder(border string) (borderMask uint8) {
@@ -323,6 +351,24 @@ func parseAlignment(alignment string) (alignH, alignV uint8) {
 	}
 
 	return alignH, alignV
+}
+
+func parsePlacement(placement string) (plm uint8) {
+	plm = placementBottom
+
+	if len(placement) == 0 {
+		return plm
+	}
+
+	switch placement[0] {
+	case 'T':
+		plm = placementTop
+	case 'B':
+		plm = placementBottom
+	default:
+	}
+
+	return plm
 }
 
 func coalesce[T comparable](vals ...T) T {

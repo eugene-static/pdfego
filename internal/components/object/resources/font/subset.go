@@ -44,12 +44,12 @@ func (f *Font) ttfSubset() ([]byte, error) {
 	glyphset := make(map[uint32]struct{}, len(glyphsIndexes))
 	glyphset[0] = struct{}{}
 
-	for _, gl := range f.manager.glyphs {
+	for _, gl := range f.glyphs() {
 		glyphsIndexes = append(glyphsIndexes, uint32(gl.index))
 		glyphset[uint32(gl.index)] = struct{}{}
 	}
 
-	srcR := bytes.NewReader(f.rawData)
+	srcR := bytes.NewReader(f.bytes)
 
 	ld, err := opentype.NewLoader(srcR)
 	if err != nil {

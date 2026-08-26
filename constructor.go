@@ -2,17 +2,20 @@ package pdfego
 
 import (
 	"errors"
-	"strconv"
+	"os"
+	"time"
 
-	"github.com/eugene-static/pdfego/internal/buffer"
-	"github.com/eugene-static/pdfego/internal/font"
-	"github.com/eugene-static/pdfego/internal/image"
+	"github.com/eugene-static/pdfego/internal/components/object/pages"
+	"github.com/eugene-static/pdfego/internal/components/object/resources"
+	"github.com/eugene-static/pdfego/internal/components/object/resources/font"
+	"github.com/eugene-static/pdfego/internal/components/object/resources/image"
+	"github.com/eugene-static/pdfego/internal/components/parameter"
+	"github.com/eugene-static/pdfego/internal/components/stream"
+	"github.com/eugene-static/pdfego/internal/components/stream/bytes"
+	"github.com/eugene-static/pdfego/internal/components/stream/primitives"
+	"github.com/eugene-static/pdfego/internal/errs"
+	"github.com/eugene-static/pdfego/internal/manager"
 	"github.com/eugene-static/pdfego/unit"
-)
-
-const (
-	defaultCell uint8 = iota
-	imageCell
 )
 
 // Columns возвращает слайс значений в миллиметрах. Функция удобна для задания ширин колонок таблицы.
@@ -23,33 +26,47 @@ func Columns(columns ...unit.MM) []unit.MM {
 // Constructor -- главный узел дерева построения макета документа.
 type Constructor struct {
 	core      *Core
+	mgr       *manager.Manager
 	paginator *Paginator
 	block     Block
-	x0        unit.MM
-	y0        unit.MM
-	x         unit.MM
-	y         unit.MM
-	dx        unit.MM
-	dy        unit.MM
+	origin    unit.Point
+	offset    unit.Point
+	cursor    unit.Point
 }
 
 // NewConstructor создает новый экземпляр конструктора с заданным ядром. Задает первую страницу макета.
 func NewConstructor(core *Core) *Constructor {
-	core.startDocument()
-	core.newPage()
-	x0, y0 := core.page.x0y0()
+	mgr := manager.New(core.pagesConfig)
 
-	block := Block{
-		core: core,
+	mgr.EnableCompression(core.enableCompression)
+	mgr.StartDocument()
+	mgr.NewPage()
+
+	paginator := &Paginator{
+		counter: &counter{
+			config: make(parameter.Numbers, 2, 4),
+		},
+		pages: mgr.Pages(),
 	}
 
+	block := Block{
+		core:    core,
+		ctx:     mgr.Context(),
+		res:     mgr.Resources(),
+		counter: paginator.counter,
+	}
+
+	viewBox := mgr.ViewBox()
+	origin := unit.NewPoint(viewBox.X0, viewBox.Y0)
+
 	return &Constructor{
-		core:  core,
-		block: block,
-		x0:    x0,
-		y0:    y0,
-		x:     x0,
-		y:     y0,
+		core:      core,
+		mgr:       mgr,
+		paginator: paginator,
+		block:     block,
+		origin:    origin,
+		offset:    origin,
+		cursor:    origin,
 	}
 }
 
@@ -66,10 +83,9 @@ func NewConstructor(core *Core) *Constructor {
 //		...
 //		constructor.Build(title)
 //		...
-func (c *Constructor) Build(applier BlockApplier) *Constructor {
-	c.render()
+func (c *Constructor) Build(applier BlockApplier, options ...NodeOptions) *Constructor {
+	c.newBlock(options, orderMode)
 
-	c.block.slots = c.block.slots[:0]
 	applier(&c.block)
 
 	return c
@@ -80,34 +96,87 @@ func (c *Constructor) NewPage() {
 	c.render()
 	c.renderPage()
 
-	c.core.newPage()
+	c.mgr.NewPage()
+	c.mgr.ResetBuffers()
 
-	c.x, c.y = c.x0, c.y0
+	c.cursor = c.offset
 }
 
 // Bytes завершает документ и отдает бинарные данные готового документа и ошибку, если такова была во время создания и рендеринга макета.
 func (c *Constructor) Bytes() ([]byte, error) {
 	c.render()
 	c.renderPage()
+	c.renderPagesCount()
 
-	defer c.reset()
+	c.mgr.FinishDocument(c.core.resources)
 
-	c.core.finishDocument()
-
-	defer c.core.reset()
-
-	err := c.core.err()
+	err := c.mgr.Context().Error()
 	if err != nil {
 		return nil, err
 	}
 
-	return c.core.bytes(), nil
+	return c.mgr.Bytes(), nil
+}
+
+// ReadImage читает изображение по заданному пути и сохраняет его с заданным псевдонимом.
+// Изображение будет использовано только для текущей итерации.
+// Изображение должно быть формата PNG.
+func (c *Constructor) ReadImage(path, alias string) error {
+	if alias == "" {
+		err := errors.New("псевдоним не может быть пустым")
+
+		return err
+	}
+
+	imageBytes, err := os.ReadFile(path)
+	if err != nil {
+		return err
+	}
+
+	img, err := image.New(alias, imageBytes, c.mgr.Compressor())
+	if err != nil {
+		return err
+	}
+
+	c.mgr.Resources().SetImage(alias, img)
+
+	return nil
+}
+
+// AddImage сохраняет бинарные данные изображения с заданным псевдонимом.
+// Изображение будет использовано только для текущей итерации.
+// Изображение должно быть формата PNG.
+func (c *Constructor) AddImage(data []byte, alias string) error {
+	if alias == "" {
+		err := errors.New("псевдоним не может быть пустым")
+
+		return err
+	}
+
+	img, err := image.New(alias, data, c.mgr.Compressor())
+	if err != nil {
+		return err
+	}
+
+	c.mgr.Resources().SetImage(alias, img)
+
+	return nil
+}
+
+// SetProducer устанавливает автора документа. По-умолчанию: "pdfego".
+func (c *Constructor) SetProducer(producer string) {
+	c.mgr.Info().SetProducer(producer)
+}
+
+// SetCreationDate устанавливает время создания документа. По-умолчанию: time.Now().
+func (c *Constructor) SetCreationDate(date time.Time) {
+	c.mgr.Info().SetCreationDate(date)
 }
 
 // Возвращает экземпляр Block. Все блоки располагаются вертикально друг за другом.
 // При каждом новом вызове метода, предыдущий экземпляр рендерится и больше не может быть изменен.
 func (c *Constructor) Block(options ...NodeOptions) *Block {
-	c.newBlock(options)
+	c.newBlock(options, orderMode)
 
 	return &c.block
 }
@@ -115,31 +184,44 @@ func (c *Constructor) Block(options ...NodeOptions) *Block {
 // Возвращает экземпляр Header. Этот блок будет повторяться в начале каждой новой страницы с момента инициализации
 // и до вызова метода ReleaseHeader(). Так же он отрисуется в момент инициализации.
 func (c *Constructor) Header(options ...NodeOptions) *Header {
-	c.newBlock(options)
-
-	x0, y0 := c.core.page.x0y0()
+	c.newBlock(options, orderMode)
 
 	return &Header{
-		block: &c.block,
-		buf:   c.core.page.newHeader(),
-		x0:    x0,
-		y0:    y0,
-		setHeight: func(height unit.MM) {
-			c.y0 += height
-		},
+		block:  &c.block,
+		offset: &c.offset,
+		mgr:    c.mgr,
 	}
 }
 
-// ReleaseHeader останавливает повторение блока Header на каждой странице.
-func (c *Constructor) ReleaseHeader() {
-	c.core.page.releaseHeader()
+// ApplyHeader -- инлайн-обретка над последовательностью Constructor.Header() и Header.Apply(BlockApplier)
+func (c *Constructor) ApplyHeader(applier BlockApplier, options ...NodeOptions) *Constructor {
+	c.newBlock(options, orderMode)
 
-	c.y0 = c.core.page.y0()
+	applier(&c.block)
+
+	wb := c.mgr.ViewBox()
+	cursor := unit.NewPoint(wb.X0, wb.Y0)
+
+	c.block.render(c.mgr.HeaderStream(), cursor)
+	c.offset.AddY(c.block.height())
+	c.mgr.WriteHeader()
+
+	return c
 }
 
-// Инициализирует повторяющийся блок.
+// ReleaseHeader останавливает повторение блока Header на каждой странице.
+func (c *Constructor) ReleaseHeader() *Constructor {
+	c.mgr.HeaderRelease()
+
+	c.offset.SetY(c.origin.Y())
+
+	return c
+}
+
+// Repeater инициализирует повторяющийся блок.
+// Deprecated. Используйте NewIterator
 func (c *Constructor) Repeater(sectioner Sectioner, options ...NodeOptions) *Repeater {
-	c.newBlock(options)
+	c.newBlock(options, 0)
 
 	return &Repeater{
 		block:      &c.block,
@@ -148,74 +230,85 @@ func (c *Constructor) Repeater(sectioner Sectioner, options ...NodeOptions) *Rep
 	}
 }
 
+// Iterate использует Iterator для рендера повторяющегося блока. Количество повторений соответствует размеру коллекции итератора.
+func (c *Constructor) Iterate(iterator iterator, options ...NodeOptions) *Constructor {
+	iterator.forEach(&c.block, func(index int) {
+		if index == 0 {
+			c.newBlock(options, iteratorMode)
+
+			return
+		}
+
+		c.render()
+	})
+
+	return c
+}
+
 // Возвращает экземпляр Watermark. Этот блок рендерится на каждой странице с момента инициализации.
 // В отличие от Header не влияет на расположение других узлов конструктора.
 func (c *Constructor) Watermark(options ...WatermarkOptions) *Watermark {
 	opts := getOptions(options)
 	alignH, alignV := parseAlignment(opts.Align)
-	x0, y0 := c.core.page.x0y0()
 
 	return &Watermark{
 		block: &Block{
-			core: c.core,
+			core:      c.core,
+			ctx:       c.mgr.Context(),
+			res:       c.mgr.Resources(),
+			slotIndex: zeroIndex,
+			mode:      orderMode,
 		},
-		buf:    c.core.page.newWatermark(),
-		x0:     x0,
-		y0:     y0,
+		mgr:    c.mgr,
 		alignH: alignH,
 		alignV: alignV,
 	}
 }
 
 // Возвращает экземпляр Paginator. Этот блок рендерится на каждой странице с момента инициализации.
-// Располагается внизу документа в области между нижней границей и нижнем краем страницы.
+// Располагается в одном из колонтитулов документа -- в области между отступом и границей документа.
 // Пишет номер текущей страницы в первую ячейку с ID = 0.
 func (c *Constructor) Paginator(options ...PaginatorOptions) *Paginator {
 	opts := getOptions(options)
-	x0 := c.core.page.x0()
-	y0 := c.core.page.yB()
 	alignH, alignV := parseAlignment(opts.Align)
+	placement := parsePlacement(opts.Placement)
 
-	paginator := &Paginator{
-		block:  &Block{core: c.core},
-		buf:    c.core.page.buffer,
-		x0:     x0,
-		y0:     y0,
-		offset: opts.Offset,
-		alignH: alignH,
-		alignV: alignV,
+	block := &Block{
+		core:      c.core,
+		ctx:       c.mgr.Context(),
+		res:       c.mgr.Resources(),
+		slotIndex: zeroIndex,
+		mode:      iteratorMode,
 	}
 
-	return paginator
+	c.paginator.block = block
+	c.paginator.offset = opts.Offset
+	c.paginator.skip = opts.Skip
+	c.paginator.alignH = alignH
+	c.paginator.alignV = alignV
+	c.paginator.placement = placement
+	c.paginator.enabled = true
+
+	return c.paginator
 }
 
 // Paginate создает блок для отображения номера страницы.
 func (c *Constructor) Paginate(offset int) {
-	c.paginator = c.Paginator(PaginatorOptions{Offset: offset, Align: "CT"})
-
-	c.paginator.Slot().Table(1, Columns(5)).Row().Cell("0", CellOptions{TextColor: ColorGray50})
-}
-
-func (c *Constructor) reset() {
-	c.block.reset()
-
-	c.x0, c.y0 = c.core.page.x0y0()
-	c.x, c.y = c.x0, c.y0
-
-	c.core.page.reset()
-	c.core.startDocument()
-	c.core.newPage()
+	c.
+		Paginator(PaginatorOptions{Offset: offset, Align: "CT"}).
+		Apply(DefaultPaginator)
 }
 
 // Новый блок не создается. Вся информация, записанная в блок рендерится и записывается в буфер страницы.
 // После блок сбрасывается и к нему применяются новые опции. Поэтому нельзя изменять "старый блок" после вызова "нового".
-func (c *Constructor) newBlock(options []NodeOptions) {
+func (c *Constructor) newBlock(options []NodeOptions, mode mode) {
 	opts := getOptions(options)
 
 	c.render()
 
 	c.block.slots = c.block.slots[:0]
-
+	c.block.slotIndex = zeroIndex
+	c.block.mode = mode
 	c.block.indentH = opts.IndentH
 	c.block.indentV = opts.IndentV
 	c.block.ledge = opts.Ledge
@@ -225,39 +318,61 @@ func (c *Constructor) newBlock(options []NodeOptions) {
 }
 
 func (c *Constructor) render() {
-	c.dy = c.block.height() + c.block.indentV
+	dy := c.block.height().Add(c.block.indentV)
 
-	if c.core.page.isBelowBottomBorder(c.y + c.dy) {
+	if c.mgr.IsBelowBottomBorder(c.cursor.Y().Add(dy)) {
 		c.renderPage()
-		c.core.newPage()
+		c.mgr.ResetBuffers()
+		c.mgr.NewPage()
 
-		c.x, c.y = c.x0, c.y0
+		c.cursor = c.offset
 	}
 
-	c.block.render(c.core.page.buffer, c.x, c.y)
+	c.block.render(c.mgr.PageStream(), c.cursor)
+	c.block.reset()
 
-	c.y += c.dy
+	c.cursor.AddY(dy)
 }
 
 func (c *Constructor) renderPage() {
-	if c.paginator != nil {
+	if c.paginator.enabled {
 		c.paginator.render()
 	}
 
-	c.core.renderPage()
+	c.mgr.WritePage()
+}
+
+func (c *Constructor) renderPagesCount() {
+	if c.paginator.counter.cell != nil {
+		c.paginator.renderCounter(c.mgr.Context())
+
+		pc, err := c.mgr.Pages().PagesCount(c.paginator.counter.config)
+		if err != nil {
+			c.mgr.Context().SetError(err)
+
+			return
+		}
+
+		c.mgr.Resources().SetObject(pages.AliasPagesCount, pc)
+	}
 }
 
 // Block -- экземпляр блока. Все блоки располагаются друг за другом вертикально, независимо от того, кем был создан экземпляр.
 // Блок в составе конструктора неделим: если его высота больше оставшегося места на странице, он будет отображен на следующей странице.
 type Block struct {
 	core       *Core
+	ctx        *manager.Context
+	res        *resources.Resources
+	counter    *counter
 	slots      []Slot
+	slotIndex  uint8
+	mode       mode
+	border     uint8
+	borderSize unit.PT
 	indentH    unit.MM
 	indentV    unit.MM
 	ledge      unit.MM
 	spacing    unit.MM
-	border     uint8
-	borderSize unit.PT
 }
 
 type BlockApplier func(block *Block)
@@ -269,10 +384,23 @@ func (b *Block) Apply(applier BlockApplier) {
 
 // Возвращает экземпляр Slot.
 func (b *Block) Slot(options ...NodeOptions) *Slot {
+	b.slotIndex++
+
+	if b.slotIndex < uint8(len(b.slots)) && b.slots[b.slotIndex].mode.is(iteratorMode) {
+		b.slots[b.slotIndex].reset()
+
+		return &b.slots[b.slotIndex]
+	}
+
 	opts := getOptions(options)
 
 	s := Slot{
 		core:       b.core,
+		ctx:        b.ctx,
+		res:        b.res,
+		counter:    b.counter,
+		blockIndex: zeroIndex,
+		mode:       b.mode,
 		indentH:    opts.IndentH,
 		indentV:    opts.IndentV,
 		spacing:    opts.Spacing,
@@ -283,25 +411,25 @@ func (b *Block) Slot(options ...NodeOptions) *Slot {
 
 	b.slots = append(b.slots, s)
 
-	return &b.slots[len(b.slots)-1]
+	return &b.slots[b.slotIndex]
 }
 
-func (b *Block) render(buf *buffer.Buffer, x, y unit.MM) {
-	x += b.indentH
-	y += b.indentV
+func (b *Block) render(dst *stream.Stream, cursor unit.Point) {
+	cursor.AddX(b.indentH)
+	cursor.AddY(b.indentV)
 
 	if b.border > 0 {
 		width := b.width()
 		height := b.height()
 		borderSize := coalesce(b.borderSize, b.core.DefaultBorderSize())
 
-		renderBorder(buf, x, y, width, height, b.border, borderSize)
+		renderBorder(dst, cursor, width, height, b.border, borderSize)
 	}
 
 	for i := range b.slots {
-		b.slots[i].render(buf, x, y)
+		b.slots[i].render(dst, cursor)
 
-		x += b.slots[i].width() + b.spacing
+		cursor.AddX(b.slots[i].width() + b.slots[i].indentH + b.spacing)
 	}
 }
 
@@ -333,35 +461,27 @@ func (b *Block) width() (w unit.MM) {
 }
 
 func (b *Block) reset() {
-	b.slots = b.slots[:0]
-
-	b.indentH = 0
-	b.indentV = 0
-	b.ledge = 0
-	b.spacing = 0
-	b.border = 0
-	b.borderSize = 0
+	b.slotIndex = zeroIndex
 }
 
-// Header -- блок, повторяющийся в начале каждой страницы. Он является частью макета документа, поэтому не может быть изменен
-// после создания нового блока.
+// Header -- блок, повторяющийся в начале каждой страницы. Он является частью макета документа,
+// поэтому не может быть изменен после создания нового блока.
 type Header struct {
-	block     *Block
-	buf       *buffer.Buffer
-	x0        unit.MM
-	y0        unit.MM
-	setHeight func(h unit.MM)
+	block  *Block
+	mgr    *manager.Manager
+	offset *unit.Point
 }
 
 // Apply вызывает переданную функцию и сохраняет результат отрисовки в собственном буфере.
 func (h *Header) Apply(applier BlockApplier) {
 	applier(h.block)
 
-	height := h.block.height()
+	wb := h.mgr.ViewBox()
+	cursor := unit.NewPoint(wb.X0, wb.Y0)
 
-	h.setHeight(height)
-
-	h.block.render(h.buf, h.x0, h.y0)
+	h.block.render(h.mgr.HeaderStream(), cursor)
+	h.offset.AddY(h.block.height())
+	h.mgr.WriteHeader()
 }
 
 // Repeater -- повторяющийся блок. Количество повторений задается через интерфейс Sectioner.
@@ -444,7 +564,7 @@ type Sectioner interface {
 func (r *Repeater) Repeat(applier RepeaterApplier) {
 	sectionsCount := r.sectioner.Count()
 	if sectionsCount <= 0 {
-		r.block.reset()
+		//r.block.reset()
 
 		return
 	}
@@ -463,13 +583,38 @@ func (r *Repeater) Repeat(applier RepeaterApplier) {
 	}
 }
 
-// Watermark -- блок, повторяющейся на каждой странице. Водяной знак не является частью основного макета документа и будет располагаться
-// поверх него. Позиционирование блока происходит в пределах границ страницы.
+// Iterator хранит сведения о повторяющемся блоке. Используется для метода Constructor.Iterate
+type Iterator[T any] struct {
+	collection []T
+	applier    IteratorApplier[T]
+}
+
+type IteratorApplier[T any] func(block *Block, item T, index int)
+
+type iterator interface {
+	forEach(block *Block, fn func(int))
+}
+
+// NewIterator инициализирует новый Iterator. Для инициализации необходима коллекция данных (напр. слайс структур) и функция-шаблон для одного элемента коллекции.
+func NewIterator[T any](collection []T, applier IteratorApplier[T]) *Iterator[T] {
+	return &Iterator[T]{
+		collection: collection,
+		applier:    applier,
+	}
+}
+
+func (it *Iterator[T]) forEach(block *Block, fn func(index int)) {
+	for i := range it.collection {
+		fn(i)
+		it.applier(block, it.collection[i], i)
+	}
+}
+
+// Watermark -- блок, повторяющейся на каждой странице. Водяной знак не является частью основного макета документа и будет располагаться поверх него.
+// Позиционирование блока происходит в пределах границ страницы.
 type Watermark struct {
 	block  *Block
-	buf    *buffer.Buffer
-	x0     unit.MM
-	y0     unit.MM
+	mgr    *manager.Manager
 	alignH uint8
 	alignV uint8
 }
@@ -478,18 +623,22 @@ type Watermark struct {
 func (w *Watermark) Apply(applier BlockApplier) {
 	applier(w.block)
 
-	dx := w.dx()
-	dy := w.dy()
+	wb := w.mgr.ViewBox()
+	dx := w.dx(wb)
+	dy := w.dy(wb)
+	cursor := unit.NewPoint(wb.X0+dx, wb.Y0+dy)
 
-	w.block.render(w.buf, w.x0+dx, w.y0+dy)
+	w.block.render(w.mgr.WatermarkStream(), cursor)
+
+	w.mgr.WriteWatermark()
 }
 
-func (w *Watermark) dx() (dx unit.MM) {
+func (w *Watermark) dx(wb pages.ViewBox) (dx unit.MM) {
 	switch w.alignH {
 	case alignR:
-		dx = w.block.core.page.width - w.block.core.page.marginLeft - w.block.core.page.marginRight - w.block.width()
+		dx = wb.Width - w.block.width()
 	case alignM:
-		dx = (w.block.core.page.width - w.block.core.page.marginLeft - w.block.core.page.marginRight - w.block.width()) / 2
+		dx = (wb.Width - w.block.width()) / 2
 	default:
 		dx = 0
 	}
@@ -497,12 +646,12 @@ func (w *Watermark) dx() (dx unit.MM) {
 	return dx
 }
 
-func (w *Watermark) dy() (dy unit.MM) {
+func (w *Watermark) dy(wb pages.ViewBox) (dy unit.MM) {
 	switch w.alignV {
 	case alignB:
-		dy = w.block.core.page.height - w.block.core.page.marginTop - w.block.core.page.marginBottom - w.block.height()
+		dy = wb.Height - w.block.height()
 	case alignM:
-		dy = (w.block.core.page.height - w.block.core.page.marginTop - w.block.core.page.marginBottom - w.block.height()) / 2
+		dy = (wb.Height - w.block.height()) / 2
 	default:
 		dy = 0
 	}
@@ -514,13 +663,16 @@ func (w *Watermark) dy() (dy unit.MM) {
 // Пагинатор не является частью основного макета документа. Макет блока не перестраивается при каждом повторении,
 // а модифицируется в зависимости от текста номера страницы.
 type Paginator struct {
-	block  *Block
-	buf    *buffer.Buffer
-	x0     unit.MM
-	y0     unit.MM
-	offset int
-	alignH uint8
-	alignV uint8
+	block     *Block
+	pages     *pages.Pages
+	counter   *counter
+	applier   PaginatorApplier
+	offset    int
+	skip      uint
+	alignH    uint8
+	alignV    uint8
+	placement uint8
+	enabled   bool
 }
 
 // Создает экземпляр Slot аналогично такому же методу у Block.
@@ -529,26 +681,66 @@ func (p *Paginator) Slot(options ...NodeOptions) *Slot {
 }
 
 // Apply вызывает переданную функцию.
-func (p *Paginator) Apply(applier BlockApplier) {
-	applier(p.block)
+func (p *Paginator) Apply(applier PaginatorApplier) *Paginator {
+	p.applier = applier
+
+	return p
+}
+
+// Disable отключает пагинатор.
+func (p *Paginator) Disable() {
+	p.enabled = false
+}
+
+type PaginatorApplier func(block *Block, number string)
+
+func DefaultPaginator(block *Block, number string) {
+	block.Slot().Table(1, Columns(5)).Row().Cell(number, CellOptions{TextColor: ColorGray50})
 }
 
 func (p *Paginator) render() {
-	num := strconv.Itoa(p.block.core.page.count + p.offset)
+	pagesCount := p.pages.Count()
+	if pagesCount <= int(p.skip) {
+		return
+	}
 
-	dx := p.dx()
-	dy := p.dy()
+	number := bytes.FormatInt(pagesCount + p.offset)
 
-	p.block.modify([]string{num})
-	p.block.render(p.buf, p.x0+dx, p.y0+dy)
+	p.applier(p.block, number)
+
+	cfg := p.pages.Config()
+	x0 := cfg.MarginLeft
+	y0 := cfg.UpperRightY.Neg()
+
+	if p.placement == placementBottom {
+		y0 = cfg.MarginBottom.Neg()
+	}
+
+	dx := p.dx(cfg)
+	dy := p.dy(cfg)
+
+	cursor := unit.NewPoint(x0+dx, y0+dy)
+
+	p.block.render(p.pages.PageStream(), cursor)
+	p.block.reset()
 }
 
-func (p *Paginator) dx() (dx unit.MM) {
+func (p *Paginator) renderCounter(ctx *manager.Context) {
+	count := bytes.FormatInt(p.pages.Count())
+	cursor := unit.NewPoint(0, 0)
+
+	p.counter.cell.setTextLines(ctx, count)
+	p.counter.cell.renderText(p.pages.CountStream(), cursor, ColorDefault)
+}
+
+func (p *Paginator) dx(cfg pages.Config) (dx unit.MM) {
+	width := cfg.UpperRightX - cfg.MarginRight
+
 	switch p.alignH {
 	case alignR:
-		dx = p.block.core.page.width - p.block.core.page.marginLeft - p.block.core.page.marginRight - p.block.width()
+		dx = width - p.block.width()
 	case alignM:
-		dx = (p.block.core.page.width - p.block.core.page.marginLeft - p.block.core.page.marginRight - p.block.width()) / 2
+		dx = (width - p.block.width()) / 2
 	default:
 		dx = 0
 	}
@@ -556,31 +748,52 @@ func (p *Paginator) dx() (dx unit.MM) {
 	return dx
 }
 
-func (p *Paginator) dy() (dy unit.MM) {
+func (p *Paginator) dy(cfg pages.Config) (dy unit.MM) {
+	area := cfg.MarginTop
+	if p.placement == placementBottom {
+		area = cfg.MarginBottom
+	}
+
 	switch p.alignV {
 	case alignB:
-		dy += p.block.core.page.marginBottom - p.block.height()
+		dy = area - p.block.height()
 	case alignM:
-		dy += (p.block.core.page.marginBottom - p.block.height()) / 2
+		dy = (area - p.block.height()) / 2
 	default:
-		dy += 0
+		dy = 0
 	}
 
 	return dy
+}
+
+type counter struct {
+	cell   *cell
+	config parameter.Numbers
+}
+
+func (pc *counter) register(cell *cell) {
+	c := *cell
+
+	pc.cell = &c
 }
 
 // Slot представляет собой слот. Слоты располагаются друг за другом горизонтально. Может содержать либо дочерние блоки Block, либо таблицу Table.
 // Высота родительского блока будет являться высотой самого высокого слота.
 type Slot struct {
 	core       *Core
+	ctx        *manager.Context
+	res        *resources.Resources
+	counter    *counter
 	blocks     []Block
 	table      *Table
+	mode       mode
+	blockIndex uint8
+	border     uint8
+	borderSize unit.PT
 	indentH    unit.MM
 	indentV    unit.MM
 	ledge      unit.MM
 	spacing    unit.MM
-	border     uint8
-	borderSize unit.PT
 }
 
 type SlotApplier func(slot *Slot)
@@ -591,13 +804,26 @@ func (s *Slot) Block(options ...NodeOptions) *Block {
 	if s.table != nil {
 		err := errors.New("слот уже содержит таблицу")
 
-		s.core.setError(err)
+		s.ctx.SetError(err)
+	}
+
+	s.blockIndex++
+
+	if s.blockIndex < uint8(len(s.blocks)) && s.blocks[s.blockIndex].mode.is(iteratorMode) {
+		s.blocks[s.blockIndex].reset()
+
+		return &s.blocks[s.blockIndex]
 	}
 
 	opts := getOptions(options)
 
 	b := Block{
 		core:       s.core,
+		ctx:        s.ctx,
+		res:        s.res,
+		counter:    s.counter,
+		slotIndex:  zeroIndex,
+		mode:       s.mode,
 		indentH:    opts.IndentH,
 		indentV:    opts.IndentV,
 		ledge:      opts.Ledge,
@@ -608,7 +834,11 @@ func (s *Slot) Block(options ...NodeOptions) *Block {
 
 	s.blocks = append(s.blocks, b)
 
-	return &s.blocks[len(s.blocks)-1]
+	return &s.blocks[s.blockIndex]
+}
+
+func (s *Slot) reset() {
+	s.blockIndex = zeroIndex
 }
 
 // Создает дочерний экземпляр таблицы Table. Таблица у слота может быть только одна. При повторном вызове метода, таблица перезапишется на новую.
@@ -616,15 +846,26 @@ func (s *Slot) Block(options ...NodeOptions) *Block {
 func (s *Slot) Table(rowsNum uint8, columns []unit.MM, options ...TableOptions) *Table {
 	if len(s.blocks) > 0 {
 		err := errors.New("слот уже содержит блоки")
-		s.core.setError(err)
+
+		s.ctx.SetError(err)
+	}
+
+	if s.table != nil && s.table.mode.is(iteratorMode) {
+		s.table.reset()
+
+		return s.table
 	}
 
 	opts := getOptions(options)
 
 	columnsNum := uint8(len(columns))
 
-	t := &Table{
+	s.table = &Table{
 		core:        s.core,
+		ctx:         s.ctx,
+		res:         s.res,
+		counter:     s.counter,
+		mode:        s.mode,
 		columns:     columns,
 		rows:        make([]Row, rowsNum),
 		rowspans:    make([]uint8, columnsNum),
@@ -639,9 +880,7 @@ func (s *Slot) Table(rowsNum uint8, columns []unit.MM, options ...TableOptions) 
 		spacingV:    opts.SpacingV,
 	}
 
-	s.table = t
-
-	return t
+	return s.table
 }
 
 // Apply вызывает переданную функцию.
@@ -651,28 +890,28 @@ func (s *Slot) Apply(applier SlotApplier) *Slot {
 	return s
 }
 
-func (s *Slot) render(buf *buffer.Buffer, x, y unit.MM) {
-	x += s.indentH
-	y += s.indentV
+func (s *Slot) render(dst *stream.Stream, cursor unit.Point) {
+	cursor.AddX(s.indentH)
+	cursor.AddY(s.indentV)
 
 	if s.border > 0 {
 		width := s.width()
 		height := s.height()
 		borderSize := coalesce(s.borderSize, s.core.DefaultBorderSize())
 
-		renderBorder(buf, x, y, width, height, s.border, borderSize)
+		renderBorder(dst, cursor, width, height, s.border, borderSize)
 	}
 
 	if s.table != nil {
-		s.table.render(buf, x, y)
+		s.table.render(dst, cursor)
 
 		return
 	}
 
 	for i := range s.blocks {
-		s.blocks[i].render(buf, x, y)
+		s.blocks[i].render(dst, cursor)
 
-		y += s.blocks[i].height() + s.blocks[i].indentV + s.spacing
+		cursor.AddY(s.blocks[i].height() + s.blocks[i].indentV + s.spacing)
 	}
 }
 
@@ -724,6 +963,10 @@ func (s *Slot) width() (w unit.MM) {
 // Table представляет собой таблицу.
 type Table struct {
 	core        *Core
+	ctx         *manager.Context
+	res         *resources.Resources
+	counter     *counter
+	mode        mode
 	columns     []unit.MM
 	rows        []Row
 	cellsPool   []cell
@@ -753,77 +996,105 @@ func (t *Table) Apply(applier TableApplier) {
 func (t *Table) Row(options ...RowOptions) *Row {
 	opts := getOptions(options)
 
-	t.setRowIndex()
+	row := t.row()
 
-	r := &t.rows[t.rowIndex]
+	defer t.updateIndexes()
 
-	t.decrementRowSpans()
-	t.newRow(r, opts)
-	t.updateIndexes()
+	if row.mode.is(iteratorMode) {
+		t.resetRow(row, opts)
 
-	return r
+		return row
+	}
+
+	t.initRow(row, opts)
+
+	return row
 }
 
-func (t *Table) newRow(row *Row, options RowOptions) {
+func (t *Table) row() *Row {
+	row := &t.rows[t.rowIndex]
+
+	return row
+}
+
+func (t *Table) initRow(row *Row, options RowOptions) {
 	columnsLen := len(t.columns)
 	start := int(t.rowIndex) * columnsLen
 	end := start + columnsLen
 
-	row.height = options.MinHeight
 	row.core = t.core
-	row.columns = t.columns
-	row.columnsLen = uint8(columnsLen)
+	row.ctx = t.ctx
+	row.res = t.res
+	row.mode = t.mode
+	row.counter = t.counter
 	row.cells = t.cellsPool[start:end]
+	row.columns = t.columns
+	row.height = options.MinHeight
+	row.columnsLen = uint8(columnsLen)
 	row.rowspans = t.rowspans
 	row.spacing = t.spacingH
+	row.columnIndex = 0
 }
 
-func (t *Table) render(buf *buffer.Buffer, x, y unit.MM) {
-	if t.core.err() != nil {
+func (t *Table) resetRow(row *Row, options RowOptions) {
+	row.height = options.MinHeight
+	row.columnIndex = 0
+}
+
+func (t *Table) render(dst *stream.Stream, cursor unit.Point) {
+	if t.ctx.IsError() {
 		return
 	}
 
-	x += t.indentH
-	y += t.indentV
+	cursor.AddX(t.indentH)
+	cursor.AddY(t.indentV)
 
 	if !t.textColor.isDefault() {
-		buf.WriteTextColor(t.textColor.rgb())
-		defer buf.WriteTextColor(ColorDefault.rgb())
+		t.textColor.WriteToStream(dst, primitives.FillColorRGB)
+		defer ColorDefault.WriteToStream(dst, primitives.FillColorRGB)
 	}
 
 	if t.border > 0 {
 		if !t.borderColor.isDefault() {
-			buf.WriteBorderColor(t.borderColor.rgb())
-			defer buf.WriteBorderColor(ColorDefault.rgb())
+			t.borderColor.WriteToStream(dst, primitives.StrokeColorRGB)
+			defer ColorDefault.WriteToStream(dst, primitives.StrokeColorRGB)
 		}
 
 		width := t.width()
 		height := t.height()
 		borderSize := coalesce(t.borderSize, t.core.DefaultBorderSize())
 
-		renderBorder(buf, x, y, width, height, t.border, borderSize)
+		renderBorder(dst, cursor, width, height, t.border, borderSize)
 	}
 
-	cx := x
-	cy := y
+	cc := cursor
 
 	for i := range t.cellsPool {
 		ri := i / len(t.columns)
 		ci := i % len(t.columns)
 
-		if t.cellsPool[i].busy {
+		if !t.cellsPool[i].mode.is(skipMode) {
 			t.setCellHeight(ri, i)
 
-			t.cellsPool[i].render(buf, cx, cy, t.textColor, t.borderColor)
+			t.cellsPool[i].render(dst, cc, t.textColor, t.borderColor)
+
+			if t.cellsPool[i].mode.is(counterMode) {
+				t.counter.config = append(t.counter.config,
+					parameter.Number(t.cellsPool[i].width.PT()),
+					parameter.Number(t.cellsPool[i].height.PT()),
+				)
+			}
 		}
 
-		cx += t.columns[ci] + t.spacingH
+		cc.AddX(t.columns[ci] + t.spacingH)
 
 		if ci == len(t.columns)-1 {
-			cx = x
-			cy += t.rows[ri].height + t.spacingV
+			cc.SetX(cursor.X())
+			cc.AddY(t.rows[ri].height + t.spacingV)
 		}
 	}
+
+	t.rowIndex = 0
 }
 
 func (t *Table) modify(section []string) {
@@ -875,19 +1146,11 @@ func (t *Table) setCellHeight(ri, cpi int) {
 	t.cellsPool[cpi].height = height
 }
 
-// Нельзя допустить вызов строки больше, чем задано при инициализации таблицы.
-func (t *Table) setRowIndex() {
-	if int(t.rowIndex) >= len(t.rows) {
-		t.rowIndex--
-	}
-}
-
 func (t *Table) updateIndexes() {
-	t.rowIndex++
-}
+	if t.rowIndex+1 < uint8(len(t.rows)) {
+		t.rowIndex++
+	}
 
-// При создании новой строки уменьшаем все rowspan на 1.
-func (t *Table) decrementRowSpans() {
 	for i := range t.rowspans {
 		if t.rowspans[i] > 0 {
 			t.rowspans[i]--
@@ -895,9 +1158,20 @@ func (t *Table) decrementRowSpans() {
 	}
 }
 
+func (t *Table) reset() {
+	for i := range t.rowspans {
+		t.rowspans[i] = 0
+	}
+
+	t.rowIndex = 0
+}
+
 // Row представляет собой экземпляр строки таблицы Table. На расстояние между строками влияет значение TableOptions.SpacingV.
 type Row struct {
 	core        *Core
+	ctx         *manager.Context
+	res         *resources.Resources
+	counter     *counter
 	cells       []cell
 	columns     []unit.MM
 	rowspans    []uint8
@@ -905,13 +1179,20 @@ type Row struct {
 	spacing     unit.MM
 	columnIndex uint8
 	columnsLen  uint8
+	mode        mode
+}
+
+type RowApplier func(*Row)
+
+func (r *Row) Apply(applier RowApplier) {
+	applier(r)
 }
 
 // Cell -- ячейка таблицы с заданным текстом. Использует шрифт, цвет по-умолчанию. Без рамки, позиционирование CM.
 func (r *Row) Cell(text string, options ...CellOptions) *Row {
 	opts := getOptions(options)
 
-	r.newCell(text, defaultCell, opts)
+	r.textCell(text, opts)
 
 	return r
 }
@@ -922,7 +1203,7 @@ func (r *Row) Label(text string, options ...CellOptions) *Row {
 
 	opts.Align = coalesce(opts.Align, "LB")
 
-	r.newCell(text, defaultCell, opts)
+	r.textCell(text, opts)
 
 	return r
 }
@@ -934,7 +1215,7 @@ func (r *Row) LabelSpan(text string, colspan uint8, options ...CellOptions) *Row
 	opts.Align = coalesce(opts.Align, "LB")
 	opts.Colspan = colspan
 
-	r.newCell(text, defaultCell, opts)
+	r.textCell(text, opts)
 
 	return r
 }
@@ -944,21 +1225,21 @@ func (r *Row) LabelHead(text string, options ...CellOptions) *Row {
 	opts := getOptions(options)
 
 	opts.Align = coalesce(opts.Align, "LB")
-	opts.Font = coalesce(opts.Font, FontBold)
+	opts.Font = coalesce(opts.Font, r.core.fontBoldAlias)
 
-	r.newCell(text, defaultCell, opts)
+	r.textCell(text, opts)
 
 	return r
 }
 
-// Blank -- ячейка таблицы, бланк, с заданным текстом и позиционированием. Тонкая граница снизу по-умолчанию.
+// Blank -- ячейка таблицы, бланк, с заданным текстом и позиционированием. Тонкая граница снизу и позиционирование по-центру-снизу по-умолчанию.
 func (r *Row) Blank(text, align string, options ...CellOptions) *Row {
 	opts := getOptions(options)
 
 	opts.Align = coalesce(opts.Align, align, "CB")
 	opts.Border = coalesce(opts.Border, "b")
 
-	r.newCell(text, defaultCell, opts)
+	r.textCell(text, opts)
 
 	return r
 }
@@ -971,7 +1252,7 @@ func (r *Row) BlankSpan(text, align string, colspan uint8, options ...CellOption
 	opts.Border = coalesce(opts.Border, "b")
 	opts.Colspan = colspan
 
-	r.newCell(text, defaultCell, opts)
+	r.textCell(text, opts)
 
 	return r
 }
@@ -982,7 +1263,7 @@ func (r *Row) BlankEmpty(options ...CellOptions) *Row {
 
 	opts.Border = coalesce(opts.Border, "b")
 
-	r.newCell("", defaultCell, opts)
+	r.textCell("", opts)
 
 	return r
 }
@@ -995,7 +1276,7 @@ func (r *Row) Form(text, align string, options ...CellOptions) *Row {
 	opts.Border = coalesce(opts.Border, "b")
 	opts.Wrap = true
 
-	r.newCell(text, defaultCell, opts)
+	r.textCell(text, opts)
 
 	return r
 }
@@ -1009,7 +1290,7 @@ func (r *Row) FormSpan(text, align string, colspan uint8, options ...CellOptions
 	opts.Colspan = colspan
 	opts.Wrap = true
 
-	r.newCell(text, defaultCell, opts)
+	r.textCell(text, opts)
 
 	return r
 }
@@ -1020,7 +1301,7 @@ func (r *Row) Paragraph(text string, options ...CellOptions) *Row {
 
 	opts.Align = coalesce(opts.Align, "CB")
 
-	r.newCell(text, defaultCell, opts)
+	r.textCell(text, opts)
 
 	return r
 }
@@ -1033,7 +1314,7 @@ func (r *Row) Underscore(text string, options ...CellOptions) *Row {
 	opts.Align = coalesce(opts.Align, "CT")
 	opts.FontSize = coalesce(opts.FontSize, r.core.DefaultFontSize().Sub(1))
 
-	r.newCell(text, defaultCell, opts)
+	r.textCell(text, opts)
 
 	return r
 }
@@ -1046,7 +1327,7 @@ func (r *Row) UnderscoreSpan(text string, colspan uint8, options ...CellOptions)
 	opts.FontSize = coalesce(opts.FontSize, r.core.DefaultFontSize().Sub(1))
 	opts.Colspan = colspan
 
-	r.newCell(text, defaultCell, opts)
+	r.textCell(text, opts)
 
 	return r
 }
@@ -1057,14 +1338,14 @@ func (r *Row) Outlined(text string, options ...CellOptions) *Row {
 
 	opts.Border = coalesce(opts.Border, "o")
 
-	r.newCell(text, defaultCell, opts)
+	r.textCell(text, opts)
 
 	return r
 }
 
 // Skip -- пустая ячейка таблицы.
 func (r *Row) Skip() *Row {
-	r.newCell("", defaultCell, CellOptions{})
+	r.skipCell()
 
 	return r
 }
@@ -1076,56 +1357,141 @@ func (r *Row) Skip() *Row {
 func (r *Row) Image(alias string, options ...CellOptions) *Row {
 	opts := getOptions(options)
 
-	r.newCell(alias, imageCell, opts)
+	r.imageCell(alias, opts)
 
 	return r
 }
 
-func (r *Row) newCell(text string, profile uint8, options CellOptions) {
-	r.setColIndex()
+func (r *Row) PagesCount(options ...CellOptions) *Row {
+	opts := getOptions(options)
 
-	c := &r.cells[r.columnIndex]
+	r.pageCountCell(opts)
 
+	return r
+}
+
+func (r *Row) cell() *cell {
+	for r.columnIndex+1 < r.columnsLen && r.rowspans[r.columnIndex] > 0 {
+		r.columnIndex++
+	}
+
+	return &r.cells[r.columnIndex]
+}
+
+func (r *Row) skipCell() *cell {
+	c := r.cell()
+
+	c.colspan = 1
+	c.rowspan = 1
+	c.width = r.cellWidth(c.colspan)
+
+	r.updateParameters(c)
+
+	return c
+}
+
+func (r *Row) textCell(text string, options CellOptions) *cell {
+	_font, err := r.core.font(coalesce(options.Font, r.core.fontRegularAlias))
+	if err != nil {
+		r.ctx.SetError(err)
+
+		return nil
+	}
+
+	c := r.cell()
+
+	c.mode = textMode
+	c.font = _font
 	c.id = options.ID
 	c.height = options.Height
-	c.static = options.Height > 0
+	c.textColor = options.TextColor
+	c.borderColor = options.BorderColor
+	c.wrapped = options.Wrap
+	c.underline = options.UnderLine
+	c.border = parseBorder(options.Border)
+	c.borderSize = coalesce(options.BorderSize, r.core.DefaultBorderSize())
+	c.alignH, c.alignV = parseAlignment(options.Align)
+	c.fontSize = coalesce(options.FontSize, r.core.DefaultFontSize())
+	c.colspan = coalesce(options.Colspan, 1)
+	c.rowspan = coalesce(options.Rowspan, 1)
+	c.width = r.cellWidth(c.colspan)
+
+	text = coalesce(text, options.PlaceHolder)
+
+	c.setTextLines(r.ctx, text)
+
+	r.updateParameters(c)
+
+	return c
+}
+
+func (r *Row) imageCell(alias string, options CellOptions) *cell {
+	_image, err := r.getImage(alias)
+	if err != nil {
+		if r.core.ignoreImageNotFound {
+			return r.textCell(options.PlaceHolder, options)
+		}
+
+		r.ctx.SetError(err)
+
+		return nil
+	}
+
+	c := r.cell()
+
+	c.mode = imageMode
+	c.image = _image
+	c.imageScale = coalesce(options.Scale, 1)
 	c.offsetH = options.OffsetH
 	c.offsetV = options.OffsetV
+	c.id = options.ID
+	c.height = options.Height
 	c.textColor = options.TextColor
 	c.borderColor = options.BorderColor
 	c.border = parseBorder(options.Border)
 	c.borderSize = coalesce(options.BorderSize, r.core.DefaultBorderSize())
+	c.alignH, c.alignV = parseAlignment(options.Align)
 	c.colspan = coalesce(options.Colspan, 1)
 	c.rowspan = coalesce(options.Rowspan, 1)
 	c.width = r.cellWidth(c.colspan)
-	c.busy = true
 
-	if profile == imageCell {
-		c.image = r.core.image(text)
-		c.imageScale = coalesce(options.Scale, 1)
+	r.updateParameters(c)
 
-		text = options.PlaceHolder
+	return c
+}
+
+func (r *Row) pageCountCell(options CellOptions) *cell {
+	c := r.textCell("", options)
+	if c == nil {
+		return nil
 	}
 
-	text = coalesce(text, options.PlaceHolder)
+	r.counter.register(c)
 
-	if text != "" {
-		c.wrapped = options.Wrap
-		c.alignH, c.alignV = parseAlignment(options.Align)
-		c.fontSize = coalesce(options.FontSize, r.core.DefaultFontSize())
-		c.font = r.core.font(coalesce(options.Font, FontRegular))
-		c.textLines = make([]font.Text, 0, 10)
+	c.mode = counterMode
 
-		c.setTextLines(text)
+	return c
+}
+
+func (r *Row) getImage(alias string) (*image.Image, error) {
+	_image, ok := r.res.GetImage(alias)
+	if ok {
+		return _image, nil
 	}
 
-	r.setHeight(c)
-	r.updateIndexes(c)
+	_image, ok = r.core.resources.GetImage(alias)
+	if ok {
+		return _image, nil
+	}
+
+	err := errs.ErrNotFound(alias)
+
+	return nil, err
 }
 
 // При модификации текста может измениться высота ячейки.
 func (r *Row) modifyCell(c *cell, text string) {
-	c.setTextLines(text)
+	c.setTextLines(r.ctx, text)
 
 	r.setHeight(c)
 }
@@ -1145,96 +1511,105 @@ func (r *Row) cellWidth(colspan uint8) (w unit.MM) {
 // Поэтому высота ячейки будет определяться в методе render().
 // TODO: сейчас я не считаю высоту, если есть rowspan, т.к. не знаю высоту следующей строки. Может быть нужно её учитывать
 func (r *Row) setHeight(c *cell) {
+	linesCount := coalesce(len(c.textLines), 1)
+
 	if c.font != nil {
-		calcHeight := c.font.Height(c.fontSize).MM() * unit.MM(len(c.textLines))
+		calcHeight := c.font.Height(c.fontSize).MM() * unit.MM(linesCount)
 
 		if calcHeight > r.height && c.rowspan < 2 {
 			r.height = calcHeight
 		}
 	}
 
-	if c.static && c.height > r.height {
+	if c.height > r.height {
 		r.height = c.height
 	}
 }
 
 // Если ячейки предыдущей строки имели rowspan, то мы ищем первую ячейку, которая rowspan не имела, и сдвигаем курсор на неё.
 func (r *Row) setColIndex() {
-	for r.columnIndex < r.columnsLen && r.rowspans[r.columnIndex] > 0 {
+	for r.columnIndex+1 < r.columnsLen && r.rowspans[r.columnIndex] > 0 {
 		r.columnIndex++
 	}
 }
 
 // Каждая ячейка имеет свой colspan > 0. Если colspan > 1, то пропущенным ячейкам тоже необходимо присвоить rowspan этой ячейки.
 // Сдвигаем курсор к следующей ячейке.
-func (r *Row) updateIndexes(c *cell) {
+func (r *Row) updateParameters(c *cell) {
 	shift := r.columnIndex + c.colspan
 
-	for i := r.columnIndex; i < min(shift, r.columnsLen); i++ {
+	for i := r.columnIndex; i < shift && i < r.columnsLen; i++ {
 		r.rowspans[i] += c.rowspan
 		r.columnIndex = i
 	}
+
+	r.setHeight(c)
 }
 
 type cell struct {
-	id          uint8
 	font        *font.Font
 	image       *image.Image
-	textColor   Color
-	borderColor Color
 	textLines   []font.Text
-	imageScale  float64
 	width       unit.MM
 	height      unit.MM
 	offsetH     unit.MM
 	offsetV     unit.MM
 	fontSize    unit.PT
 	borderSize  unit.PT
+	imageScale  float64
+	textColor   Color
+	borderColor Color
+	id          uint8
 	border      uint8
 	colspan     uint8
 	rowspan     uint8
 	alignH      uint8
 	alignV      uint8
+	mode        mode
+	underline   bool
 	wrapped     bool
-	static      bool
-	busy        bool
 }
 
-func (c *cell) setTextLines(text string) {
-	if c.font == nil || text == "" {
+func (c *cell) setTextLines(ctx *manager.Context, text string) {
+	if c.font == nil {
 		return
 	}
 
-	c.textLines = c.textLines[:0]
+	if c.textLines == nil {
+		c.textLines = make([]font.Text, 0, 10)
+	} else {
+		c.textLines = c.textLines[:0]
+	}
 
+	if text == "" {
+		return
+	}
+
+	width := unit.MM(0)
 	if c.wrapped {
-		c.textLines = append(c.textLines, c.font.SplitText(text, c.fontSize, c.width, c.textLines)...)
-
-		return
+		width = c.width
 	}
 
-	c.textLines = append(c.textLines, c.font.FullText(text, c.fontSize))
+	c.font.SplitText(text, c.fontSize, width, &c.textLines, ctx.RuneBuffer(), ctx.HexBuffer())
 }
 
-func (c *cell) render(buf *buffer.Buffer, x, y unit.MM, parentTextColor, parentBorderColor Color) {
+func (c *cell) render(dst *stream.Stream, cursor unit.Point, parentTextColor, parentBorderColor Color) {
 	if c.border > 0 {
-		c.renderBorder(buf, x, y, parentBorderColor)
+		c.renderBorder(dst, cursor, parentBorderColor)
 	}
 
-	if c.image != nil {
-		c.renderImage(buf, x, y)
-
-		return
-	}
-
-	if len(c.textLines) != 0 {
-		c.renderText(buf, x, y, parentTextColor)
-
-		return
+	switch c.mode {
+	case imageMode:
+		c.renderImage(dst, cursor)
+	case counterMode:
+		c.renderXObject(dst, cursor, pages.AliasPagesCount)
+	case textMode:
+		c.renderText(dst, cursor, parentTextColor)
+	default:
 	}
 }
 
-func (c *cell) renderImage(buf *buffer.Buffer, x, y unit.MM) {
+func (c *cell) renderImage(dst *stream.Stream, cursor unit.Point) {
 	var w, h, dx, dy unit.MM
 
 	if c.height < c.width {
@@ -1249,53 +1624,80 @@ func (c *cell) renderImage(buf *buffer.Buffer, x, y unit.MM) {
 		dy = c.imageDy(h)
 	}
 
-	buf.WriteImage(x+dx, y+dy, w, h, c.image.Alias())
+	matrix := primitives.NewMatrix(
+		primitives.NewScale(w.PT(), h.PT()),
+		primitives.Skew{},
+		primitives.NewPoint(cursor.X().Add(dx).PT(), cursor.Y().Add(dy).PT().Abs()),
+	)
+
+	c.image.WriteToStream(dst, matrix)
 }
 
-// BT /[FontAlias] [FontSize] Tf 1 0 0 1 [X] [Y] Tm <[TextHex]> Tj ET
-func (c *cell) renderText(buf *buffer.Buffer, x, y unit.MM, parentTextColor Color) {
+func (c *cell) renderText(dst *stream.Stream, cursor unit.Point, parentTextColor Color) {
 	if !c.textColor.isDefault() {
-		buf.WriteTextColor(c.textColor.rgb())
-		defer buf.WriteTextColor(parentTextColor.rgb())
-	}
+		c.textColor.WriteToStream(dst, primitives.FillColorRGB)
+		defer parentTextColor.WriteToStream(dst, primitives.FillColorRGB)
 
-	buf.WriteStringLn("BT")
-	buf.WriteFont(c.font.Alias(), c.fontSize)
+		if c.underline {
+			c.textColor.WriteToStream(dst, primitives.StrokeColorRGB)
+			defer parentTextColor.WriteToStream(dst, primitives.StrokeColorRGB)
+		}
+	}
 
 	for i := range c.textLines {
 		dx := c.lineDx(i)
 		dy := c.lineDy(i)
 
-		buf.WriteText(c.font, x+dx, y+dy, c.textLines[i].Data())
+		c.textLines[i].SetMatrix(
+			primitives.NewPoint(cursor.X().Add(dx).PT(), cursor.Y().Add(dy).PT().Abs()),
+		)
+
+		if c.underline {
+			underlineDy := c.borderSize.MM()
+			borderSize := font.UnderlineSize(c.fontSize)
+			borderCursor := cursor
+
+			borderCursor.AddX(dx)
+			borderCursor.AddY(dy)
+
+			renderBorder(dst, borderCursor, c.textLines[i].Width(), underlineDy, borderBottom, borderSize)
+		}
 	}
 
-	buf.WriteStringLn("ET")
+	c.font.WriteToStream(dst, c.textLines, c.fontSize)
 }
 
-func (c *cell) renderBorder(buf *buffer.Buffer, x, y unit.MM, parentBorderColor Color) {
+func (c *cell) renderBorder(dst *stream.Stream, cursor unit.Point, parentBorderColor Color) {
 	if !c.borderColor.isDefault() {
-		buf.WriteBorderColor(c.borderColor.rgb())
-		defer buf.WriteBorderColor(parentBorderColor.rgb())
+		c.borderColor.WriteToStream(dst, primitives.StrokeColorRGB)
+		defer parentBorderColor.WriteToStream(dst, primitives.StrokeColorRGB)
 	}
 
-	renderBorder(buf, x, y, c.width, c.height, c.border, c.borderSize)
+	renderBorder(dst, cursor, c.width, c.height, c.border, c.borderSize)
+}
+
+func (c *cell) renderXObject(dst *stream.Stream, cursor unit.Point, alias string) {
+	matrix := primitives.NewMatrix(
+		primitives.NewScale(1, 1),
+		primitives.Skew{},
+		primitives.NewPoint(cursor.X().PT(), cursor.Y().Add(c.height).PT().Abs()),
+	)
+
+	xObject := primitives.NewXObject(primitives.Alias(alias), matrix)
+
+	xObject.WriteToStream(dst)
 }
 
 func (c *cell) lineDx(index int) (dx unit.MM) {
 	textWidth := c.textLines[index].Width()
 
-	if textWidth == 0 {
-		text := []rune(c.textLines[index].Data())
-		textWidth = c.font.MeasureText(c.fontSize, text, 0, len(text)).MM()
-	}
-
 	switch c.alignH {
 	case alignR:
-		dx = c.width - textWidth - font.Margin(c.fontSize).MM()
+		dx = c.width - textWidth - font.Padding(c.fontSize).MM()
 	case alignC:
 		dx = (c.width - textWidth) / 2
 	default:
-		dx = font.Margin(c.fontSize).MM()
+		dx = font.Padding(c.fontSize).MM()
 	}
 
 	return dx
@@ -1304,7 +1706,7 @@ func (c *cell) lineDx(index int) (dx unit.MM) {
 func (c *cell) lineDy(index int) (dy unit.MM) {
 	fontHeight := c.font.Height(c.fontSize).MM()
 	lenTextLines := len(c.textLines)
-	padding := font.Margin(c.fontSize).MM()
+	padding := font.Padding(c.fontSize).MM()
 
 	// index + 1 необходим для того, чтобы выставить Y-координату по верхнему краю шрифта.
 	// PDF считает Y от нижней границы страницы, а здесь все координаты указаны от верхней. К тому же позиционирует шрифт по baseline.
