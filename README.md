@@ -9,7 +9,7 @@ PDFEGO — это конструктор файлов PDF на GO. Констр�
 ## Installation
 
 ~~~
-go get gitlab.wildberries.ru/ovp/ovp/go-infrastructure/pdfego
+go get github.com/eugene-static/pdfego
 ~~~
 
 ## Structure
@@ -41,7 +41,7 @@ import (
 	"log"
 	"os"
 
-	"gitlab.wildberries.ru/ovp/ovp/go-infrastructure/pdfego"
+	"github.com/eugene-static/pdfego"
 )
 
 func main() {
