@@ -5,7 +5,7 @@ import (
 	"time"
 )
 
-type DTO struct {
+type View struct {
 	Status string
 	SfNum  string
 	SfDate string
@@ -78,12 +78,12 @@ type Certificate struct {
 	ValidityPeriodTo   string
 }
 
-func newDTO(detailsNum int) DTO {
+func newView(detailsNum int) View {
 	details := []Detail{
 		{
 			Number:           "1",
-			Code:             "00112",
-			Title:            "Бумага А4 500 листов, артикул 98765",
+			Code:             "2001915",
+			Title:            "Бумага офисная Комус Документ Standard+ А4 80 г/кв.м марка С 146 CIE (500 листов)",
 			KindID:           "",
 			OkeiID:           "796",
 			OkeiCode:         "шт.",
@@ -110,7 +110,7 @@ func newDTO(detailsNum int) DTO {
 		ValidityPeriodTo:   "01.01.2028 09:00",
 	}
 
-	upd := DTO{
+	upd := View{
 		Status:                       "1",
 		SfNum:                        "1234567890",
 		SfDate:                       time.Now().Format("02.01.2006"),
@@ -148,29 +148,4 @@ func newDTO(detailsNum int) DTO {
 	}
 
 	return upd
-}
-
-func (dto DTO) Section(index int) []string {
-	dto.DetailsOrdered[0] = dto.Details[index].Code
-	dto.DetailsOrdered[1] = dto.Details[index].Number
-	dto.DetailsOrdered[2] = dto.Details[index].Title
-	dto.DetailsOrdered[3] = dto.Details[index].KindID
-	dto.DetailsOrdered[4] = dto.Details[index].OkeiID
-	dto.DetailsOrdered[5] = dto.Details[index].OkeiCode
-	dto.DetailsOrdered[6] = dto.Details[index].Quantity
-	dto.DetailsOrdered[7] = dto.Details[index].Price
-	dto.DetailsOrdered[8] = dto.Details[index].AmountWithoutVat
-	dto.DetailsOrdered[9] = dto.Details[index].Excise
-	dto.DetailsOrdered[10] = dto.Details[index].Vat
-	dto.DetailsOrdered[11] = dto.Details[index].AmountVat
-	dto.DetailsOrdered[12] = dto.Details[index].AmountWithVat
-	dto.DetailsOrdered[13] = dto.Details[index].CountryID
-	dto.DetailsOrdered[14] = dto.Details[index].CountryName
-	dto.DetailsOrdered[15] = dto.Details[index].Gtd
-
-	return dto.DetailsOrdered
-}
-
-func (dto DTO) Count() int {
-	return len(dto.Details)
 }

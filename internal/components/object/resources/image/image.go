@@ -5,20 +5,26 @@ import (
 	"errors"
 	"image"
 	"image/png"
+
+	"github.com/eugene-static/pdfego/internal/components/parameter"
+	"github.com/eugene-static/pdfego/internal/components/stream"
+	"github.com/eugene-static/pdfego/internal/components/stream/primitives"
+	"github.com/eugene-static/pdfego/internal/compressor"
+)
+
+const (
+	bitsPerComponent = 8
 )
 
 type Image struct {
-	alias     string
-	rgbData   []byte
-	alphaData []byte
-	width     int
-	height    int
-	rgbComp   bool
-	alphaComp bool
-	hasAlpha  bool
+	alias      primitives.Alias
+	compressor *compressor.Compressor
+	objects    objects
+	width      int
+	height     int
 }
 
-func New(alias string, data []byte) (*Image, error) {
+func New(alias string, data []byte, comp *compressor.Compressor) (*Image, error) {
 	img, err := png.Decode(bytes.NewReader(data))
 	if err != nil {
 		return nil, err
@@ -80,26 +86,30 @@ func New(alias string, data []byte) (*Image, error) {
 		}
 	}
 
-	return &Image{
-		alias:     alias,
-		rgbData:   rgb,
-		alphaData: alpha,
-		width:     width,
-		height:    height,
-		hasAlpha:  hasAlpha,
-	}, nil
+	_image := &Image{
+		alias:      primitives.Alias(alias),
+		width:      width,
+		height:     height,
+		compressor: comp,
+	}
+
+	if hasAlpha {
+		err = _image.initXAlpha(alpha)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	err = _image.initXImage(rgb)
+	if err != nil {
+		return nil, err
+	}
+
+	return _image, nil
 }
 
-func (img *Image) Alias() string {
-	return img.alias
-}
-
-func (img *Image) RGB() ([]byte, bool) {
-	return img.rgbData, img.rgbComp
-}
-
-func (img *Image) Alpha() ([]byte, bool) {
-	return img.alphaData, img.alphaComp
+func (img *Image) Alias() parameter.Name {
+	return parameter.Name(img.alias)
 }
 
 func (img *Image) Width() int {
@@ -110,14 +120,8 @@ func (img *Image) Height() int {
 	return img.height
 }
 
-func (img *Image) SaveCompressedRGB(data []byte) {
-	img.rgbData = data
-
-	img.rgbComp = true
-}
-
-func (img *Image) SaveCompressedAlpha(data []byte) {
-	img.alphaData = data
-
-	img.alphaComp = true
+// q $W 0 0 $H $X $Y cm /$ImageAlias Do Q
+func (img *Image) WriteToStream(dst *stream.Stream, matrix primitives.Matrix) {
+	primitives.NewXObject(img.alias, matrix).
+		WriteToStream(dst)
 }

@@ -1,5 +1,11 @@
 package pdfego
 
+import (
+	"github.com/eugene-static/pdfego/internal/components/stream"
+	"github.com/eugene-static/pdfego/internal/components/stream/primitives"
+	"github.com/eugene-static/pdfego/unit"
+)
+
 // Color применяется для обозначения цвета текста и границ.
 type Color uint32
 
@@ -78,12 +84,23 @@ func NewColor(r, g, b uint8) Color {
 	return (Color(r) << 16) | (Color(g) << 8) | Color(b)
 }
 
-func (c Color) rgb() (r float64, g float64, b float64) {
-	r = float64(c >> 16 & 0xFF)
-	g = float64(c >> 8 & 0xFF)
-	b = float64(c & 0xFF)
+func (c Color) rgb() (r, g, b unit.Intensity) {
+	r = unit.Intensity(c>>16&0xFF) / 255
+	g = unit.Intensity(c>>8&0xFF) / 255
+	b = unit.Intensity(c&0xFF) / 255
 
-	return r / 255, g / 255, b / 255
+	return r, g, b
+}
+
+func (c Color) WriteToStream(dst *stream.Stream, operator primitives.Operator) {
+	r, g, b := c.rgb()
+
+	dst.NewStreamWriter().
+		Write(r).SP().
+		Write(g).SP().
+		Write(b).SP().
+		Write(operator).LF().
+		Close()
 }
 
 func (c Color) equal(other Color) bool {
