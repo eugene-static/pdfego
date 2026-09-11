@@ -23,21 +23,30 @@ const (
 	alignC uint8 = 0 + iota
 	alignL
 	alignR
+	alignJ
+
 	alignM = alignC
 	alignT = alignL
 	alignB = alignR
 )
 
 const (
-	placementTop = iota
+	placementTop uint8 = iota
 	placementBottom
+)
+
+const (
+	fitOff uint8 = iota
+	fitSymbols
+	fitWords
 )
 
 // Здесь подробно описано каждое поле настроек.
 //
 // Align -- позиционирование контента внутри объекта.
-// Задается строкой, состоящей из символов 'L' (left), 'C' (center), 'R' (right) для позиционирования по горизонтали
-// и символов 'T' (top), 'M' (middle), 'B' (bottom) для позиционирования по вертикали.
+// Задается строкой, состоящей из символов 'L' (left), 'C' (center), 'R' (right) для позиционирования по горизонтали.
+// И символов 'T' (top), 'M' (middle), 'B' (bottom) для позиционирования по вертикали.
+// 'J' (jusify) используется для растягивания текста по ширине.
 // Если не задано, используется по-умолчанию "CM".
 //
 // Border -- отрисовка границ объекта.
@@ -67,14 +76,16 @@ const (
 // Задается типом Color.
 // Если не задано, по-умолчанию ColorBlack
 //
-// Wrap -- признак переноса текста.
-// Задается булевым типом.
-// Если не задано, по-умолчанию false.
-// Текст с опцией Wrap автоматически перенесется на следующую строку, если его ширина будет превышать ширину ячейки.
+// Wrap -- признак переноса текста. (Deprecated)
+//
+// FitContent -- способ заполнения ячейки.
+// Задается строкой, где "W" (words) означает перенос текста по словам, "S" означает перенос текста по символам.
+// Если не задано, по-умолчанию тект не переносится.
+// Текст с опцией FitContent автоматически перенесется на следующую строку, если его ширина будет превышать ширину ячейки.
 // Высота строки (и всех ячеек в ней соответственно) будет увеличена под высоту области, которую занимает текст.
 // Возможно задать принудительный перенос символом '\n'. Например:
 //
-//	.Cell("Универсальный\nпередаточный\nдокумент", CellOptions{ Wrap: true })
+//	.Cell("Универсальный\nпередаточный\nдокумент", CellOptions{ FitContent: "W" })
 //
 // Placeholder -- текст, используемый в случаях, когда изображение не найдено.
 //
@@ -132,12 +143,14 @@ type Options interface {
 // NodeOptions используется для настройки параметров блока Block, слота Slot, заголовка Header.
 // Подробное описание всех полей здесь: Options.
 type NodeOptions struct {
-	Border     string
-	BorderSize unit.PT
-	Spacing    unit.MM
-	IndentH    unit.MM
-	IndentV    unit.MM
-	Ledge      unit.MM
+	Border        string
+	BorderColor   Color
+	BorderPattern []unit.PT
+	BorderSize    unit.PT
+	Spacing       unit.MM
+	IndentH       unit.MM
+	IndentV       unit.MM
+	Ledge         unit.MM
 }
 
 // WatermarkOptions используется для настройки параметров водяного знака Watermark.
@@ -158,14 +171,15 @@ type PaginatorOptions struct {
 // TableOptions используется для настройки параметров таблицы Table.
 // Подробное описание всех полей здесь: Options.
 type TableOptions struct {
-	TextColor   Color
-	BorderColor Color
-	Border      string
-	BorderSize  unit.PT
-	IndentH     unit.MM
-	IndentV     unit.MM
-	SpacingH    unit.MM
-	SpacingV    unit.MM
+	TextColor     Color
+	BorderColor   Color
+	Border        string
+	BorderPattern []unit.PT
+	BorderSize    unit.PT
+	IndentH       unit.MM
+	IndentV       unit.MM
+	SpacingH      unit.MM
+	SpacingV      unit.MM
 }
 
 // RowOptions используется для настройки параметров строки Row.
@@ -177,24 +191,40 @@ type RowOptions struct {
 // CellOptions используется для настройки параметров ячейки.
 // Подробное описание всех полей здесь: Options.
 type CellOptions struct {
-	Align       string
-	Border      string
-	Font        string
-	PlaceHolder string
-	Scale       float64
-	OffsetH     unit.MM
-	OffsetV     unit.MM
-	Height      unit.MM
-	BorderSize  unit.PT
-	FontSize    unit.PT
-	TextColor   Color
-	BorderColor Color
-	ID          uint8
-	Colspan     uint8
-	Rowspan     uint8
-	UnderLine   bool
-	Wrap        bool
+	Align         string
+	Border        string
+	Font          string
+	PlaceHolder   string
+	FitContent    string
+	Scale         float64
+	OffsetH       unit.MM
+	OffsetV       unit.MM
+	Height        unit.MM
+	BorderPattern []unit.PT
+	BorderSize    unit.PT
+	FontSize      unit.PT
+	TextColor     Color
+	BorderColor   Color
+	ID            uint8 // Deprecated
+	Colspan       uint8
+	Rowspan       uint8
+	UnderLine     bool
+	Wrap          bool // Deprecated
 }
+
+type borderOptions struct {
+	mask        uint8
+	color       Color
+	parentColor Color
+	size        unit.PT
+	pattern     []unit.PT
+}
+
+func BorderPattern(points ...unit.PT) []unit.PT {
+	return points
+}
+
+var BorderPatternDash = []unit.PT{2, 1}
 
 type mode uint8
 
@@ -229,9 +259,19 @@ func getOptions[T Options](opts []T) T {
 	return opt
 }
 
-func renderBorder(dst *stream.Stream, cursor unit.Point, w, h unit.MM, borderMask uint8, borderSize unit.PT) {
-	if borderMask&borderAll == borderAll && (borderMask^borderAll == thickAll || borderMask^borderAll == 0) {
-		bs := getBorderSize(borderSize, borderMask, thickAll)
+func renderBorder(dst *stream.Stream, cursor unit.Point, w, h unit.MM, border borderOptions) {
+	if border.color != border.parentColor {
+		border.color.WriteToStream(dst, primitives.StrokeColorRGB)
+		defer border.parentColor.WriteToStream(dst, primitives.StrokeColorRGB)
+	}
+
+	if len(border.pattern) > 0 {
+		primitives.NewLinePattern(border.pattern).WriteToStream(dst)
+		defer primitives.DefaultLinePattern().WriteToStream(dst)
+	}
+
+	if border.mask&borderAll == borderAll && (border.mask^borderAll == thickAll || border.mask^borderAll == 0) {
+		bs := getBorderSize(border.size, border.mask, thickAll)
 		start := primitives.NewPoint(cursor.X().PT(), cursor.Y().PT().Abs())
 		size := primitives.NewSize(w.PT(), h.Neg().PT())
 
@@ -242,8 +282,8 @@ func renderBorder(dst *stream.Stream, cursor unit.Point, w, h unit.MM, borderMas
 		return
 	}
 
-	if borderMask&borderLeft != 0 {
-		bs := getBorderSize(borderSize, borderMask, thickLeft)
+	if border.mask&borderLeft != 0 {
+		bs := getBorderSize(border.size, border.mask, thickLeft)
 		start := primitives.NewPoint(cursor.X().PT(), cursor.Y().PT().Abs())
 		end := primitives.NewPoint(cursor.X().PT(), cursor.Y().Add(h).PT().Abs())
 
@@ -252,8 +292,8 @@ func renderBorder(dst *stream.Stream, cursor unit.Point, w, h unit.MM, borderMas
 			WriteToStream(dst)
 	}
 
-	if borderMask&borderRight != 0 {
-		bs := getBorderSize(borderSize, borderMask, thickRight)
+	if border.mask&borderRight != 0 {
+		bs := getBorderSize(border.size, border.mask, thickRight)
 		start := primitives.NewPoint(cursor.X().Add(w).PT(), cursor.Y().PT().Abs())
 		end := primitives.NewPoint(cursor.X().Add(w).PT(), cursor.Y().Add(h).PT().Abs())
 
@@ -262,8 +302,8 @@ func renderBorder(dst *stream.Stream, cursor unit.Point, w, h unit.MM, borderMas
 			WriteToStream(dst)
 	}
 
-	if borderMask&borderTop != 0 {
-		bs := getBorderSize(borderSize, borderMask, thickTop)
+	if border.mask&borderTop != 0 {
+		bs := getBorderSize(border.size, border.mask, thickTop)
 		start := primitives.NewPoint(cursor.X().PT(), cursor.Y().PT().Abs())
 		end := primitives.NewPoint(cursor.X().Add(w).PT(), cursor.Y().PT().Abs())
 
@@ -272,8 +312,8 @@ func renderBorder(dst *stream.Stream, cursor unit.Point, w, h unit.MM, borderMas
 			WriteToStream(dst)
 	}
 
-	if borderMask&borderBottom != 0 {
-		bs := getBorderSize(borderSize, borderMask, thickBottom)
+	if border.mask&borderBottom != 0 {
+		bs := getBorderSize(border.size, border.mask, thickBottom)
 		start := primitives.NewPoint(cursor.X().PT(), cursor.Y().Add(h).PT().Abs())
 		end := primitives.NewPoint(cursor.X().Add(w).PT(), cursor.Y().Add(h).PT().Abs())
 
@@ -340,6 +380,8 @@ func parseAlignment(alignment string) (alignH, alignV uint8) {
 			alignH = alignC
 		case 'R':
 			alignH = alignR
+		case 'J':
+			alignH = alignJ
 		case 'T':
 			alignV = alignT
 		case 'M':
@@ -369,6 +411,27 @@ func parsePlacement(placement string) (plm uint8) {
 	}
 
 	return plm
+}
+
+func parseFitContent(wrap bool, fitContent string) (fit uint8) {
+	fit = fitOff
+
+	if fitContent != "" {
+		switch fitContent[0] {
+		case 'W':
+			fit = fitWords
+		case 'S':
+			fit = fitSymbols
+		default:
+			fit = fitOff
+		}
+	}
+
+	if wrap {
+		fit = fitWords
+	}
+
+	return fit
 }
 
 func coalesce[T comparable](vals ...T) T {

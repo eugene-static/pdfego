@@ -95,11 +95,7 @@ func (c *Constructor) Build(applier BlockApplier, options ...NodeOptions) *Const
 func (c *Constructor) NewPage() {
 	c.render()
 	c.renderPage()
-
-	c.mgr.NewPage()
-	c.mgr.ResetBuffers()
-
-	c.cursor = c.offset
+	c.newPage()
 }
 
 // Bytes завершает документ и отдает бинарные данные готового документа и ошибку, если такова была во время создания и рендеринга макета.
@@ -202,7 +198,7 @@ func (c *Constructor) ApplyHeader(applier BlockApplier, options ...NodeOptions) 
 	wb := c.mgr.ViewBox()
 	cursor := unit.NewPoint(wb.X0, wb.Y0)
 
-	c.block.render(c.mgr.HeaderStream(), cursor)
+	c.block.render(c.mgr.HeaderStream(), cursor, ColorDefault)
 	c.offset.AddY(c.block.height())
 	c.mgr.WriteHeader()
 
@@ -302,9 +298,18 @@ func (c *Constructor) Paginate(offset int) {
 // Новый блок не создается. Вся информация, записанная в блок рендерится и записывается в буфер страницы.
 // После блок сбрасывается и к нему применяются новые опции. Поэтому нельзя изменять "старый блок" после вызова "нового".
 func (c *Constructor) newBlock(options []NodeOptions, mode mode) {
+	if c.block.slotIndex != zeroIndex {
+		c.render()
+	}
+
 	opts := getOptions(options)
 
-	c.render()
+	border := borderOptions{
+		mask:    parseBorder(opts.Border),
+		size:    coalesce(opts.BorderSize, c.core.DefaultBorderSize()),
+		color:   opts.BorderColor,
+		pattern: opts.BorderPattern,
+	}
 
 	c.block.slots = c.block.slots[:0]
 	c.block.slotIndex = zeroIndex
@@ -313,8 +318,14 @@ func (c *Constructor) newBlock(options []NodeOptions, mode mode) {
 	c.block.indentV = opts.IndentV
 	c.block.ledge = opts.Ledge
 	c.block.spacing = opts.Spacing
-	c.block.border = parseBorder(opts.Border)
-	c.block.borderSize = opts.BorderSize
+	c.block.border = border
+}
+
+func (c *Constructor) newPage() {
+	c.mgr.ResetBuffers()
+	c.mgr.NewPage()
+
+	c.cursor = c.offset
 }
 
 func (c *Constructor) render() {
@@ -322,13 +333,10 @@ func (c *Constructor) render() {
 
 	if c.mgr.IsBelowBottomBorder(c.cursor.Y().Add(dy)) {
 		c.renderPage()
-		c.mgr.ResetBuffers()
-		c.mgr.NewPage()
-
-		c.cursor = c.offset
+		c.newPage()
 	}
 
-	c.block.render(c.mgr.PageStream(), c.cursor)
+	c.block.render(c.mgr.PageStream(), c.cursor, ColorDefault)
 	c.block.reset()
 
 	c.cursor.AddY(dy)
@@ -360,19 +368,18 @@ func (c *Constructor) renderPagesCount() {
 // Block -- экземпляр блока. Все блоки располагаются друг за другом вертикально, независимо от того, кем был создан экземпляр.
 // Блок в составе конструктора неделим: если его высота больше оставшегося места на странице, он будет отображен на следующей странице.
 type Block struct {
-	core       *Core
-	ctx        *manager.Context
-	res        *resources.Resources
-	counter    *counter
-	slots      []Slot
-	slotIndex  uint8
-	mode       mode
-	border     uint8
-	borderSize unit.PT
-	indentH    unit.MM
-	indentV    unit.MM
-	ledge      unit.MM
-	spacing    unit.MM
+	core      *Core
+	ctx       *manager.Context
+	res       *resources.Resources
+	counter   *counter
+	slots     []Slot
+	slotIndex uint8
+	mode      mode
+	border    borderOptions
+	indentH   unit.MM
+	indentV   unit.MM
+	ledge     unit.MM
+	spacing   unit.MM
 }
 
 type BlockApplier func(block *Block)
@@ -394,6 +401,13 @@ func (b *Block) Slot(options ...NodeOptions) *Slot {
 
 	opts := getOptions(options)
 
+	border := borderOptions{
+		mask:    parseBorder(opts.Border),
+		size:    coalesce(opts.BorderSize, b.core.DefaultBorderSize()),
+		color:   opts.BorderColor,
+		pattern: opts.BorderPattern,
+	}
+
 	s := Slot{
 		core:       b.core,
 		ctx:        b.ctx,
@@ -405,8 +419,7 @@ func (b *Block) Slot(options ...NodeOptions) *Slot {
 		indentV:    opts.IndentV,
 		spacing:    opts.Spacing,
 		ledge:      opts.Ledge,
-		borderSize: opts.BorderSize,
-		border:     parseBorder(opts.Border),
+		border:     border,
 	}
 
 	b.slots = append(b.slots, s)
@@ -414,16 +427,15 @@ func (b *Block) Slot(options ...NodeOptions) *Slot {
 	return &b.slots[b.slotIndex]
 }
 
-func (b *Block) render(dst *stream.Stream, cursor unit.Point) {
+func (b *Block) render(dst *stream.Stream, cursor unit.Point, parentBorderColor Color) {
 	cursor.AddX(b.indentH)
 	cursor.AddY(b.indentV)
 
-	if b.border > 0 {
+	if b.border.mask > 0 {
 		width := b.width()
 		height := b.height()
-		borderSize := coalesce(b.borderSize, b.core.DefaultBorderSize())
 
-		renderBorder(dst, cursor, width, height, b.border, borderSize)
+		renderBorder(dst, cursor, width, height, b.border)
 	}
 
 	for i := range b.slots {
@@ -479,7 +491,7 @@ func (h *Header) Apply(applier BlockApplier) {
 	wb := h.mgr.ViewBox()
 	cursor := unit.NewPoint(wb.X0, wb.Y0)
 
-	h.block.render(h.mgr.HeaderStream(), cursor)
+	h.block.render(h.mgr.HeaderStream(), cursor, ColorDefault)
 	h.offset.AddY(h.block.height())
 	h.mgr.WriteHeader()
 }
@@ -628,7 +640,7 @@ func (w *Watermark) Apply(applier BlockApplier) {
 	dy := w.dy(wb)
 	cursor := unit.NewPoint(wb.X0+dx, wb.Y0+dy)
 
-	w.block.render(w.mgr.WatermarkStream(), cursor)
+	w.block.render(w.mgr.WatermarkStream(), cursor, ColorDefault)
 
 	w.mgr.WriteWatermark()
 }
@@ -721,7 +733,7 @@ func (p *Paginator) render() {
 
 	cursor := unit.NewPoint(x0+dx, y0+dy)
 
-	p.block.render(p.pages.PageStream(), cursor)
+	p.block.render(p.pages.PageStream(), cursor, ColorDefault)
 	p.block.reset()
 }
 
@@ -787,9 +799,8 @@ type Slot struct {
 	blocks     []Block
 	table      *Table
 	mode       mode
+	border     borderOptions
 	blockIndex uint8
-	border     uint8
-	borderSize unit.PT
 	indentH    unit.MM
 	indentV    unit.MM
 	ledge      unit.MM
@@ -817,19 +828,25 @@ func (s *Slot) Block(options ...NodeOptions) *Block {
 
 	opts := getOptions(options)
 
+	border := borderOptions{
+		mask:    parseBorder(opts.Border),
+		size:    coalesce(opts.BorderSize, s.core.DefaultBorderSize()),
+		color:   opts.BorderColor,
+		pattern: opts.BorderPattern,
+	}
+
 	b := Block{
-		core:       s.core,
-		ctx:        s.ctx,
-		res:        s.res,
-		counter:    s.counter,
-		slotIndex:  zeroIndex,
-		mode:       s.mode,
-		indentH:    opts.IndentH,
-		indentV:    opts.IndentV,
-		ledge:      opts.Ledge,
-		spacing:    opts.Spacing,
-		border:     parseBorder(opts.Border),
-		borderSize: opts.BorderSize,
+		core:      s.core,
+		ctx:       s.ctx,
+		res:       s.res,
+		counter:   s.counter,
+		slotIndex: zeroIndex,
+		mode:      s.mode,
+		indentH:   opts.IndentH,
+		indentV:   opts.IndentV,
+		ledge:     opts.Ledge,
+		spacing:   opts.Spacing,
+		border:    border,
 	}
 
 	s.blocks = append(s.blocks, b)
@@ -858,26 +875,31 @@ func (s *Slot) Table(rowsNum uint8, columns []unit.MM, options ...TableOptions) 
 
 	opts := getOptions(options)
 
+	border := borderOptions{
+		mask:    parseBorder(opts.Border),
+		size:    coalesce(opts.BorderSize, s.core.DefaultBorderSize()),
+		color:   opts.BorderColor,
+		pattern: opts.BorderPattern,
+	}
+
 	columnsNum := uint8(len(columns))
 
 	s.table = &Table{
-		core:        s.core,
-		ctx:         s.ctx,
-		res:         s.res,
-		counter:     s.counter,
-		mode:        s.mode,
-		columns:     columns,
-		rows:        make([]Row, rowsNum),
-		rowspans:    make([]uint8, columnsNum),
-		cellsPool:   make([]cell, rowsNum*columnsNum),
-		textColor:   opts.TextColor,
-		borderColor: opts.BorderColor,
-		border:      parseBorder(opts.Border),
-		borderSize:  opts.BorderSize,
-		indentH:     opts.IndentH,
-		indentV:     opts.IndentV,
-		spacingH:    opts.SpacingH,
-		spacingV:    opts.SpacingV,
+		core:      s.core,
+		ctx:       s.ctx,
+		resources: s.res,
+		counter:   s.counter,
+		mode:      s.mode,
+		columns:   columns,
+		rows:      make([]Row, rowsNum),
+		rowspans:  make([]uint8, columnsNum),
+		cellsPool: make([]cell, rowsNum*columnsNum),
+		border:    border,
+		textColor: opts.TextColor,
+		indentH:   opts.IndentH,
+		indentV:   opts.IndentV,
+		spacingH:  opts.SpacingH,
+		spacingV:  opts.SpacingV,
 	}
 
 	return s.table
@@ -894,12 +916,11 @@ func (s *Slot) render(dst *stream.Stream, cursor unit.Point) {
 	cursor.AddX(s.indentH)
 	cursor.AddY(s.indentV)
 
-	if s.border > 0 {
+	if s.border.mask > 0 {
 		width := s.width()
 		height := s.height()
-		borderSize := coalesce(s.borderSize, s.core.DefaultBorderSize())
 
-		renderBorder(dst, cursor, width, height, s.border, borderSize)
+		renderBorder(dst, cursor, width, height, s.border)
 	}
 
 	if s.table != nil {
@@ -909,7 +930,7 @@ func (s *Slot) render(dst *stream.Stream, cursor unit.Point) {
 	}
 
 	for i := range s.blocks {
-		s.blocks[i].render(dst, cursor)
+		s.blocks[i].render(dst, cursor, s.border.color)
 
 		cursor.AddY(s.blocks[i].height() + s.blocks[i].indentV + s.spacing)
 	}
@@ -962,24 +983,22 @@ func (s *Slot) width() (w unit.MM) {
 
 // Table представляет собой таблицу.
 type Table struct {
-	core        *Core
-	ctx         *manager.Context
-	res         *resources.Resources
-	counter     *counter
-	mode        mode
-	columns     []unit.MM
-	rows        []Row
-	cellsPool   []cell
-	rowspans    []uint8
-	rowIndex    uint8
-	textColor   Color
-	borderColor Color
-	border      uint8
-	borderSize  unit.PT
-	indentH     unit.MM
-	indentV     unit.MM
-	spacingH    unit.MM
-	spacingV    unit.MM
+	core      *Core
+	ctx       *manager.Context
+	resources *resources.Resources
+	counter   *counter
+	mode      mode
+	columns   []unit.MM
+	rows      []Row
+	cellsPool []cell
+	rowspans  []uint8
+	rowIndex  uint8
+	textColor Color
+	border    borderOptions
+	indentH   unit.MM
+	indentV   unit.MM
+	spacingH  unit.MM
+	spacingV  unit.MM
 }
 
 type TableApplier func(*Table)
@@ -1024,7 +1043,7 @@ func (t *Table) initRow(row *Row, options RowOptions) {
 
 	row.core = t.core
 	row.ctx = t.ctx
-	row.res = t.res
+	row.resources = t.resources
 	row.mode = t.mode
 	row.counter = t.counter
 	row.cells = t.cellsPool[start:end]
@@ -1033,6 +1052,8 @@ func (t *Table) initRow(row *Row, options RowOptions) {
 	row.columnsLen = uint8(columnsLen)
 	row.rowspans = t.rowspans
 	row.spacing = t.spacingH
+	row.textColor = t.textColor
+	row.borderColor = t.border.color
 	row.columnIndex = 0
 }
 
@@ -1054,17 +1075,11 @@ func (t *Table) render(dst *stream.Stream, cursor unit.Point) {
 		defer ColorDefault.WriteToStream(dst, primitives.FillColorRGB)
 	}
 
-	if t.border > 0 {
-		if !t.borderColor.isDefault() {
-			t.borderColor.WriteToStream(dst, primitives.StrokeColorRGB)
-			defer ColorDefault.WriteToStream(dst, primitives.StrokeColorRGB)
-		}
-
+	if t.border.mask > 0 {
 		width := t.width()
 		height := t.height()
-		borderSize := coalesce(t.borderSize, t.core.DefaultBorderSize())
 
-		renderBorder(dst, cursor, width, height, t.border, borderSize)
+		renderBorder(dst, cursor, width, height, t.border)
 	}
 
 	cc := cursor
@@ -1076,7 +1091,7 @@ func (t *Table) render(dst *stream.Stream, cursor unit.Point) {
 		if !t.cellsPool[i].mode.is(skipMode) {
 			t.setCellHeight(ri, i)
 
-			t.cellsPool[i].render(dst, cc, t.textColor, t.borderColor)
+			t.cellsPool[i].render(dst, cc, t.textColor)
 
 			if t.cellsPool[i].mode.is(counterMode) {
 				t.counter.config = append(t.counter.config,
@@ -1170,13 +1185,15 @@ func (t *Table) reset() {
 type Row struct {
 	core        *Core
 	ctx         *manager.Context
-	res         *resources.Resources
+	resources   *resources.Resources
 	counter     *counter
 	cells       []cell
 	columns     []unit.MM
 	rowspans    []uint8
 	height      unit.MM
 	spacing     unit.MM
+	textColor   Color
+	borderColor Color
 	columnIndex uint8
 	columnsLen  uint8
 	mode        mode
@@ -1274,7 +1291,7 @@ func (r *Row) Form(text, align string, options ...CellOptions) *Row {
 
 	opts.Align = coalesce(opts.Align, align, "CB")
 	opts.Border = coalesce(opts.Border, "b")
-	opts.Wrap = true
+	opts.FitContent = "W"
 
 	r.textCell(text, opts)
 
@@ -1288,7 +1305,7 @@ func (r *Row) FormSpan(text, align string, colspan uint8, options ...CellOptions
 	opts.Align = coalesce(opts.Align, align, "CB")
 	opts.Border = coalesce(opts.Border, "b")
 	opts.Colspan = colspan
-	opts.Wrap = true
+	opts.FitContent = "W"
 
 	r.textCell(text, opts)
 
@@ -1339,6 +1356,17 @@ func (r *Row) Outlined(text string, options ...CellOptions) *Row {
 	opts.Border = coalesce(opts.Border, "o")
 
 	r.textCell(text, opts)
+
+	return r
+}
+
+// OutlinedEmpty -- ячейка таблицы с заданной и рамкой из тонкой линии вокруг ячейки; без текста.
+func (r *Row) OutlinedEmpty(options ...CellOptions) *Row {
+	opts := getOptions(options)
+
+	opts.Border = coalesce(opts.Border, "o")
+
+	r.textCell("", opts)
 
 	return r
 }
@@ -1400,17 +1428,23 @@ func (r *Row) textCell(text string, options CellOptions) *cell {
 
 	c := r.cell()
 
+	border := borderOptions{
+		mask:        parseBorder(options.Border),
+		size:        coalesce(options.BorderSize, r.core.DefaultBorderSize()),
+		parentColor: r.borderColor,
+		color:       options.BorderColor,
+		pattern:     options.BorderPattern,
+	}
+
 	c.mode = textMode
 	c.font = _font
 	c.id = options.ID
 	c.height = options.Height
-	c.textColor = options.TextColor
-	c.borderColor = options.BorderColor
-	c.wrapped = options.Wrap
 	c.underline = options.UnderLine
-	c.border = parseBorder(options.Border)
-	c.borderSize = coalesce(options.BorderSize, r.core.DefaultBorderSize())
+	c.border = border
 	c.alignH, c.alignV = parseAlignment(options.Align)
+	c.fitContent = parseFitContent(options.Wrap, options.FitContent)
+	c.textColor = coalesce(options.TextColor, r.textColor)
 	c.fontSize = coalesce(options.FontSize, r.core.DefaultFontSize())
 	c.colspan = coalesce(options.Colspan, 1)
 	c.rowspan = coalesce(options.Rowspan, 1)
@@ -1439,6 +1473,14 @@ func (r *Row) imageCell(alias string, options CellOptions) *cell {
 
 	c := r.cell()
 
+	border := borderOptions{
+		mask:        parseBorder(options.Border),
+		size:        coalesce(options.BorderSize, r.core.DefaultBorderSize()),
+		parentColor: r.borderColor,
+		color:       options.BorderColor,
+		pattern:     options.BorderPattern,
+	}
+
 	c.mode = imageMode
 	c.image = _image
 	c.imageScale = coalesce(options.Scale, 1)
@@ -1446,11 +1488,9 @@ func (r *Row) imageCell(alias string, options CellOptions) *cell {
 	c.offsetV = options.OffsetV
 	c.id = options.ID
 	c.height = options.Height
-	c.textColor = options.TextColor
-	c.borderColor = options.BorderColor
-	c.border = parseBorder(options.Border)
-	c.borderSize = coalesce(options.BorderSize, r.core.DefaultBorderSize())
+	c.border = border
 	c.alignH, c.alignV = parseAlignment(options.Align)
+	c.textColor = coalesce(options.TextColor, r.textColor)
 	c.colspan = coalesce(options.Colspan, 1)
 	c.rowspan = coalesce(options.Rowspan, 1)
 	c.width = r.cellWidth(c.colspan)
@@ -1474,7 +1514,7 @@ func (r *Row) pageCountCell(options CellOptions) *cell {
 }
 
 func (r *Row) getImage(alias string) (*image.Image, error) {
-	_image, ok := r.res.GetImage(alias)
+	_image, ok := r.resources.GetImage(alias)
 	if ok {
 		return _image, nil
 	}
@@ -1547,27 +1587,25 @@ func (r *Row) updateParameters(c *cell) {
 }
 
 type cell struct {
-	font        *font.Font
-	image       *image.Image
-	textLines   []font.Text
-	width       unit.MM
-	height      unit.MM
-	offsetH     unit.MM
-	offsetV     unit.MM
-	fontSize    unit.PT
-	borderSize  unit.PT
-	imageScale  float64
-	textColor   Color
-	borderColor Color
-	id          uint8
-	border      uint8
-	colspan     uint8
-	rowspan     uint8
-	alignH      uint8
-	alignV      uint8
-	mode        mode
-	underline   bool
-	wrapped     bool
+	font       *font.Font
+	image      *image.Image
+	textLines  []font.Text
+	border     borderOptions
+	width      unit.MM
+	height     unit.MM
+	offsetH    unit.MM
+	offsetV    unit.MM
+	fontSize   unit.PT
+	imageScale float64
+	textColor  Color
+	id         uint8
+	colspan    uint8
+	rowspan    uint8
+	alignH     uint8
+	alignV     uint8
+	fitContent uint8
+	mode       mode
+	underline  bool
 }
 
 func (c *cell) setTextLines(ctx *manager.Context, text string) {
@@ -1585,17 +1623,19 @@ func (c *cell) setTextLines(ctx *manager.Context, text string) {
 		return
 	}
 
-	width := unit.MM(0)
-	if c.wrapped {
-		width = c.width
+	switch c.fitContent {
+	case fitWords:
+		c.textLines = c.font.SplitTextIntoLinesByWords(text, c.fontSize, c.width, c.textLines, ctx.HexBuffer())
+	case fitSymbols:
+		c.textLines = c.font.SplitTextIntoLinesBySymbols(text, c.fontSize, c.width, c.textLines, ctx.HexBuffer())
+	default:
+		c.textLines = c.font.WriteTextToLine(text, c.fontSize, c.width, c.textLines, ctx.HexBuffer())
 	}
-
-	c.font.SplitText(text, c.fontSize, width, &c.textLines, ctx.RuneBuffer(), ctx.HexBuffer())
 }
 
-func (c *cell) render(dst *stream.Stream, cursor unit.Point, parentTextColor, parentBorderColor Color) {
-	if c.border > 0 {
-		c.renderBorder(dst, cursor, parentBorderColor)
+func (c *cell) render(dst *stream.Stream, cursor unit.Point, parentTextColor Color) {
+	if c.border.mask > 0 {
+		c.renderBorder(dst, cursor)
 	}
 
 	switch c.mode {
@@ -1634,14 +1674,9 @@ func (c *cell) renderImage(dst *stream.Stream, cursor unit.Point) {
 }
 
 func (c *cell) renderText(dst *stream.Stream, cursor unit.Point, parentTextColor Color) {
-	if !c.textColor.isDefault() {
+	if c.textColor != parentTextColor {
 		c.textColor.WriteToStream(dst, primitives.FillColorRGB)
 		defer parentTextColor.WriteToStream(dst, primitives.FillColorRGB)
-
-		if c.underline {
-			c.textColor.WriteToStream(dst, primitives.StrokeColorRGB)
-			defer parentTextColor.WriteToStream(dst, primitives.StrokeColorRGB)
-		}
 	}
 
 	for i := range c.textLines {
@@ -1653,27 +1688,32 @@ func (c *cell) renderText(dst *stream.Stream, cursor unit.Point, parentTextColor
 		)
 
 		if c.underline {
-			underlineDy := c.borderSize.MM()
-			borderSize := font.UnderlineSize(c.fontSize)
+			underlineDy := c.border.size.MM()
 			borderCursor := cursor
 
 			borderCursor.AddX(dx)
 			borderCursor.AddY(dy)
 
-			renderBorder(dst, borderCursor, c.textLines[i].Width(), underlineDy, borderBottom, borderSize)
+			border := borderOptions{
+				mask:        borderBottom,
+				color:       c.textColor,
+				parentColor: parentTextColor,
+				size:        font.UnderlineSize(c.fontSize),
+			}
+
+			renderBorder(dst, borderCursor, c.textLines[i].Width(), underlineDy, border)
 		}
 	}
 
-	c.font.WriteToStream(dst, c.textLines, c.fontSize)
+	if c.alignH == alignJ {
+		c.font.WriteToStreamWithIndividualGlyphPosition(dst, c.textLines, c.fontSize)
+	} else {
+		c.font.WriteToStream(dst, c.textLines, c.fontSize)
+	}
 }
 
-func (c *cell) renderBorder(dst *stream.Stream, cursor unit.Point, parentBorderColor Color) {
-	if !c.borderColor.isDefault() {
-		c.borderColor.WriteToStream(dst, primitives.StrokeColorRGB)
-		defer parentBorderColor.WriteToStream(dst, primitives.StrokeColorRGB)
-	}
-
-	renderBorder(dst, cursor, c.width, c.height, c.border, c.borderSize)
+func (c *cell) renderBorder(dst *stream.Stream, cursor unit.Point) {
+	renderBorder(dst, cursor, c.width, c.height, c.border)
 }
 
 func (c *cell) renderXObject(dst *stream.Stream, cursor unit.Point, alias string) {

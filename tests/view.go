@@ -84,7 +84,7 @@ func newView(detailsNum int) View {
 			Number:           "1",
 			Code:             "2001915",
 			Title:            "Бумага офисная Комус Документ Standard+ А4 80 г/кв.м марка С 146 CIE (500 листов)",
-			KindID:           "",
+			KindID:           "--",
 			OkeiID:           "796",
 			OkeiCode:         "шт.",
 			Quantity:         "100",
@@ -94,9 +94,9 @@ func newView(detailsNum int) View {
 			Vat:              "22%",
 			AmountVat:        "6 600,00",
 			AmountWithVat:    "36 600,00",
-			CountryID:        "--",
-			CountryName:      "--",
-			Gtd:              "--",
+			CountryID:        "643",
+			CountryName:      "Россия",
+			Gtd:              "10013160/161122/3554104/10",
 		},
 	}
 

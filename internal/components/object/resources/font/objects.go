@@ -8,6 +8,7 @@ import (
 	"github.com/eugene-static/pdfego/internal/components/parameter"
 	"github.com/eugene-static/pdfego/internal/components/stream/bytes"
 	"github.com/eugene-static/pdfego/internal/components/stream/primitives"
+	"github.com/eugene-static/pdfego/unit"
 )
 
 type objects struct {
@@ -41,23 +42,19 @@ func (f *Font) CMapB() *object.Object {
 		bw := bytes.NewWriter(stream.AvailableBuffer())
 
 		for chunk := range slices.Chunk(glyphs, 100) {
-
 			bw = bw.
 				WriteInt(len(chunk)).SP().
 				Write(primitives.BeginBfChar).LF()
 
-			for _, gl := range chunk {
-				glyphIndex := primitives.HEX(gl.index)
-				glyphRune := primitives.HEX(gl.rune)
-
+			for _, _glyph := range chunk {
 				// <0000> <FFFF>
 				bw = bw.
 					WriteByte(primitives.HexadecimalStringOpen).
-					Write(glyphIndex).
+					Write(_glyph.index).
 					WriteByte(primitives.HexadecimalStringClose).
 					SP().
 					WriteByte(primitives.HexadecimalStringOpen).
-					Write(glyphRune).
+					Write(unit.HEX(_glyph.rune)).
 					WriteByte(primitives.HexadecimalStringClose).
 					LF()
 			}
@@ -148,7 +145,7 @@ func (f *Font) FontDescriptor() *object.Object {
 			ItalicAngle: parameter.Number(f.metrics.italicAngle),
 			Ascent:      parameter.Integer(f.metrics.ascent),
 			Descent:     parameter.Integer(f.metrics.descent),
-			CapHeight:   parameter.Integer(f.metrics.capHeight.Round()),
+			CapHeight:   parameter.Integer(f.metrics.capHeight.Font(ppem)),
 			StemV:       parameter.Integer(f.metrics.stemV),
 			FontFile2:   fontFile2Ref,
 		}

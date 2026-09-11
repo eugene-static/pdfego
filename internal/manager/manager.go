@@ -9,7 +9,6 @@ import (
 	"github.com/eugene-static/pdfego/internal/components/object/trailer"
 	"github.com/eugene-static/pdfego/internal/components/object/xref"
 	"github.com/eugene-static/pdfego/internal/components/stream"
-	"github.com/eugene-static/pdfego/internal/components/stream/primitives"
 	"github.com/eugene-static/pdfego/internal/compressor"
 	"github.com/eugene-static/pdfego/unit"
 )
@@ -30,8 +29,7 @@ type Manager struct {
 
 func New(cfg *pages.Config) *Manager {
 	ctx := &Context{
-		hexb:  make([]primitives.HEX, 0, 1<<10),
-		runeb: make([]rune, 0),
+		hexb: make([]unit.HEX, 0, 1<<10),
 	}
 
 	comp := compressor.New()
@@ -104,7 +102,6 @@ func (mgr *Manager) EnableCompression(enable bool) {
 
 func (mgr *Manager) ResetBuffers() {
 	mgr.context.hexb = mgr.context.hexb[:0]
-	mgr.context.runeb = mgr.context.runeb[:0]
 }
 
 func (mgr *Manager) IsBelowBottomBorder(y unit.MM) bool {
@@ -112,18 +109,12 @@ func (mgr *Manager) IsBelowBottomBorder(y unit.MM) bool {
 }
 
 type Context struct {
-	hexb  []primitives.HEX
-	runeb []rune
+	hexb  []unit.HEX
 	error error
 }
 
-func (ctx *Context) HexBuffer() *[]primitives.HEX {
+func (ctx *Context) HexBuffer() *[]unit.HEX {
 	return &ctx.hexb
-}
-
-func (ctx *Context) RuneBuffer() *[]rune {
-	ctx.runeb = ctx.runeb[:0]
-	return &ctx.runeb
 }
 
 func (ctx *Context) Error() error {

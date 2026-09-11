@@ -39,7 +39,7 @@ var pdfTables = [...]tableTag{
 // При таком способе индексы глифов не переписываются, поэтому можно использовать те, что были собраны до этого.
 func (f *Font) ttfSubset() ([]byte, error) {
 	glyphsIndexes := make([]uint32, 0, 256)
-	glyphsIndexes = append(glyphsIndexes, notdef)
+	glyphsIndexes = append(glyphsIndexes, 0)
 
 	glyphset := make(map[uint32]struct{}, len(glyphsIndexes))
 	glyphset[0] = struct{}{}

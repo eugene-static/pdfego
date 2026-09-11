@@ -2,10 +2,10 @@ package unit
 
 import (
 	"math"
-	"strconv"
+
+	"golang.org/x/image/math/fixed"
 
 	"github.com/eugene-static/pdfego/internal/components/stream/bytes"
-	"golang.org/x/image/math/fixed"
 )
 
 const (
@@ -17,6 +17,10 @@ type PT float64
 
 func (pt PT) MM() MM {
 	return MM(pt / (dpi / inch))
+}
+
+func (pt PT) EM(size PT) EM {
+	return EM(pt / size)
 }
 
 func (pt PT) Float64() float64 {
@@ -45,7 +49,7 @@ func (pt PT) Abs() PT {
 
 func (pt PT) Append(dst []byte) []byte {
 	if pt == PT(int(pt)) {
-		return strconv.AppendInt(dst, int64(pt), 10)
+		return bytes.AppendInt(dst, int64(pt))
 	}
 
 	return bytes.AppendFloat(dst, float64(pt))
@@ -81,7 +85,7 @@ func (mm MM) Neg() MM {
 
 func (mm MM) Append(dst []byte) []byte {
 	if mm == MM(int(mm)) {
-		return strconv.AppendInt(dst, int64(mm), 10)
+		return bytes.AppendInt(dst, int64(mm))
 	}
 
 	return bytes.AppendFloat(dst, float64(mm))
