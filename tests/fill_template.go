@@ -2,7 +2,6 @@ package tests
 
 import (
 	"fmt"
-	"strconv"
 
 	"github.com/eugene-static/pdfego"
 	"github.com/eugene-static/pdfego/unit"
@@ -86,15 +85,17 @@ func (tmpl *updTemplate) fill() ([]byte, error) {
 }
 
 func (tmpl *updTemplate) header(block *pdfego.Block) {
-	table := block.Slot().Table(3, pdfego.Columns(15, 5))
+	table := block.
+		Slot().
+		Table(3, pdfego.Columns(15, 5), pdfego.TableOptions{SpacingV: 5})
 
 	table.Row().
-		Cell("Универсальный передаточный документ", pdfego.CellOptions{Height: 10, Wrap: true, Colspan: 2, Align: "LT"})
+		Cell("Универсальный передаточный документ", pdfego.CellOptions{FitContent: "W", Colspan: 2, Align: "LT"})
 	table.Row().
 		Cell("Статус", pdfego.CellOptions{Height: 5, Align: "LM"}).
 		Cell(tmpl.view.Status, pdfego.CellOptions{Height: 5, Align: "CM", Border: "O"})
 	table.Row().
-		Cell("1 - счет-фактура и\nпередаточный\nдокумент (акт)\n2 - передаточный\nдокумент (акт)", pdfego.CellOptions{Height: 15, Align: "LB", Colspan: 2, FontSize: 5, Wrap: true})
+		Cell("1 - счет-фактура и\nпередаточный\nдокумент (акт)\n2 - передаточный\nдокумент (акт)", pdfego.CellOptions{Align: "LB", Colspan: 2, FontSize: 5, FitContent: "W"})
 
 	numberDatesRequisitesSlot := block.Slot(
 		pdfego.NodeOptions{
@@ -131,11 +132,11 @@ func (tmpl *updTemplate) header(block *pdfego.Block) {
 
 	table = numbersDates.
 		Slot().
-		Table(1, []unit.MM{190})
+		Table(1, []unit.MM{194})
 
 	table.Row().
 		Cell("Приложение № 1 к постановлению Правительства Российской Федерации от 26 декабря 2011 г. № 1137\n(в редакции постановления Правительства Российской Федерации от 16 августа 2024 г. № 1096)",
-			pdfego.CellOptions{Align: "RT", Font: pdfego.FontItalic, FontSize: 5, Wrap: true})
+			pdfego.CellOptions{Align: "RT", Font: pdfego.FontItalic, FontSize: 5, FitContent: "W"})
 
 	requisites := numberDatesRequisitesSlot.
 		Block(pdfego.NodeOptions{
@@ -184,7 +185,7 @@ func (tmpl *updTemplate) header(block *pdfego.Block) {
 				"при получении оплаты, частичной оплаты или иных платежей в счет\n"+
 				"предстоящих поставок товаров (выполнения работ, оказания услуг),",
 			2,
-			pdfego.CellOptions{Wrap: true},
+			pdfego.CellOptions{FitContent: "W"},
 		)
 	table.Row().
 		Label("передачи имущественных прав №:").
@@ -214,7 +215,7 @@ func (tmpl *updTemplate) header(block *pdfego.Block) {
 		Blank(tmpl.view.CurrencyNameCode, "LB").
 		Paragraph("(7)")
 	table.Row().
-		Label("Идентификатор государственного контракта,\nдоговора (соглашения) (при наличии):", pdfego.CellOptions{Wrap: true}).
+		Label("Идентификатор государственного контракта,\nдоговора (соглашения) (при наличии):", pdfego.CellOptions{FitContent: "W"}).
 		BlankEmpty().
 		Paragraph("(8)")
 }
@@ -223,36 +224,36 @@ func (tmpl *updTemplate) tableHeader(block *pdfego.Block) {
 	table := block.Slot().Table(2, tmpl.tableColumns)
 
 	optsBounded := pdfego.CellOptions{
-		Height: 15,
-		Border: "o",
-		Wrap:   true,
+		Height:     15,
+		Border:     "o",
+		FitContent: "W",
 	}
 
 	optsBoundedRS2 := pdfego.CellOptions{
-		Rowspan: 2,
-		Border:  "o",
-		Wrap:    true,
+		Rowspan:    2,
+		Border:     "o",
+		FitContent: "W",
 	}
 
 	optsBoundedCS2 := pdfego.CellOptions{
-		Colspan: 2,
-		Border:  "o",
-		Wrap:    true,
+		Colspan:    2,
+		Border:     "o",
+		FitContent: "W",
 	}
 
 	table.Row().
-		Cell("Код\nтовара/работ, услуг", pdfego.CellOptions{Height: 10, Border: "tblR", Wrap: true, Rowspan: 2}).
+		Cell("Код\nтовара/работ, услуг", pdfego.CellOptions{Height: 10, Border: "tblR", FitContent: "W", Rowspan: 2}).
 		Cell("№\nп/п", optsBoundedRS2).
 		Cell("Наименование товара\n(описание выполненных работ, оказанных услуг),\nимущественного права", optsBoundedRS2).
 		Cell("Код\nвида\nтовара", optsBoundedRS2).
 		Cell("Единица\nизмерения", optsBoundedCS2).
 		Cell("Количество\n(объем)", optsBoundedRS2).
 		Cell("Цена\n(тариф) за\nединицу\nизмерения", optsBoundedRS2).
-		Cell("Стоимость\nтоваров (работ,\nуслуг),\nимущественных\nправ без налога -\nвсего", optsBoundedRS2).
+		Cell("Стоимость товаров\n(работ, услуг),\nимущественных\nправ без налога -\nвсего", optsBoundedRS2).
 		Cell("В том числе сумма акциза", optsBoundedRS2).
 		Cell("Налоговая\nставка", optsBoundedRS2).
 		Cell("Сумма налога,\nпредъявляемая\nпокупателю", optsBoundedRS2).
-		Cell("Стоимость\nтоваров (работ,\nуслуг),\nимущественных\nправ с налогом -\nвсего", optsBoundedRS2).
+		Cell("Стоимость товаров\n(работ, услуг),\nимущественных\nправ с налогом -\nвсего", optsBoundedRS2).
 		Cell("Страна\nпроисхождения\nтовара", optsBoundedCS2).
 		Cell("Регистрационный\nномер декларации\nна товары или\nрегистрационный\nномер партии\nтовара,\nподлежащего\nпрослеживаемости", optsBoundedRS2)
 
@@ -286,14 +287,14 @@ func (tmpl *updTemplate) tableNumberHeader(block *pdfego.Block) {
 		Outlined("11")
 }
 
-func (tmpl *updTemplate) tableDetailsIter(block *pdfego.Block, item Detail, index int) {
+func (tmpl *updTemplate) tableDetailsIter(block *pdfego.Block, item Detail, _ int) {
 	table := block.Slot().
 		Table(1, tmpl.tableColumns)
 
 	table.Row().
 		Cell(item.Code, pdfego.CellOptions{Align: "CB", Border: "tblR"}).
-		Outlined(strconv.Itoa(index+1), pdfego.CellOptions{Align: "CB"}).
-		Outlined(item.Title, pdfego.CellOptions{Align: "LB", Wrap: true}).
+		Outlined(item.Number, pdfego.CellOptions{Align: "CB"}).
+		Outlined(item.Title, pdfego.CellOptions{Align: "LB", FitContent: "W"}).
 		Outlined(item.KindID, pdfego.CellOptions{Align: "CB"}).
 		Outlined(item.OkeiID, pdfego.CellOptions{Align: "RB"}).
 		Outlined(item.OkeiCode, pdfego.CellOptions{Align: "LB"}).
@@ -306,7 +307,7 @@ func (tmpl *updTemplate) tableDetailsIter(block *pdfego.Block, item Detail, inde
 		Outlined(item.AmountWithVat, pdfego.CellOptions{Align: "RB"}).
 		Outlined(item.CountryID, pdfego.CellOptions{Align: "RB"}).
 		Outlined(item.CountryName, pdfego.CellOptions{Align: "LB"}).
-		Outlined(item.Gtd, pdfego.CellOptions{Align: "LB"})
+		Outlined(item.Gtd, pdfego.CellOptions{Align: "LB", FitContent: "S"})
 }
 
 func (tmpl *updTemplate) tableFooter(block *pdfego.Block) {
@@ -314,13 +315,13 @@ func (tmpl *updTemplate) tableFooter(block *pdfego.Block) {
 		Table(1, tmpl.tableColumns)
 
 	table.Row().
-		Cell("", pdfego.CellOptions{Border: "tblR", Height: 3}).
+		OutlinedEmpty(pdfego.CellOptions{Border: "tblR", Height: 3}).
 		Outlined("Всего к оплате:", pdfego.CellOptions{Align: "RB", Colspan: 7, Font: pdfego.FontBold}).
 		Outlined(tmpl.view.AmountWithoutVatTotal, pdfego.CellOptions{Align: "RB"}).
 		Outlined("X", pdfego.CellOptions{Align: "CB", Colspan: 2, Font: pdfego.FontBold}).
 		Outlined(tmpl.view.AmountVatTotal, pdfego.CellOptions{Align: "RB"}).
 		Outlined(tmpl.view.AmountWithVatTotal, pdfego.CellOptions{Align: "RB"}).
-		Outlined("", pdfego.CellOptions{Colspan: 3})
+		OutlinedEmpty(pdfego.CellOptions{Colspan: 3})
 }
 
 func (tmpl *updTemplate) signatories(block *pdfego.Block) {
@@ -346,10 +347,10 @@ func (tmpl *updTemplate) signatories(block *pdfego.Block) {
 			pdfego.TableOptions{SpacingH: 1, IndentH: 1})
 
 	table.Row().
-		Cell("Руководитель организации\nили иное уполномоченное лицо", pdfego.CellOptions{Height: 10, Align: "LB", Wrap: true}).
+		Cell("Руководитель организации\nили иное уполномоченное лицо", pdfego.CellOptions{Height: 10, Align: "LB", FitContent: "W"}).
 		Blank("[электронная подпись]", "CB").
 		Blank(tmpl.view.OrgChiefName, "CB").
-		Cell("Главный бухгалтер\nили иное уполномоченное лицо", pdfego.CellOptions{Height: 10, Align: "LB", Wrap: true}).
+		Cell("Главный бухгалтер\nили иное уполномоченное лицо", pdfego.CellOptions{Height: 10, Align: "LB", FitContent: "W"}).
 		Blank("[электронная подпись]", "CB").
 		Blank(tmpl.view.OrgAccountantName, "CB")
 	table.Row().
@@ -360,7 +361,7 @@ func (tmpl *updTemplate) signatories(block *pdfego.Block) {
 		Underscore("(подпись)").
 		Underscore("(Ф.И.О.)")
 	table.Row().
-		Cell("Индивидуальный предприниматель\nили иное уполномоченное лицо", pdfego.CellOptions{Height: 10, Align: "LB", Wrap: true}).
+		Cell("Индивидуальный предприниматель\nили иное уполномоченное лицо", pdfego.CellOptions{Height: 10, Align: "LB", FitContent: "W"}).
 		BlankEmpty().
 		BlankEmpty().
 		BlankEmpty(pdfego.CellOptions{Colspan: 3})
@@ -539,5 +540,5 @@ func (tmpl *updTemplate) watermark(block *pdfego.Block) {
 	table.Row().
 		Skip().
 		Label(tmpl.view.Certificate.SignerName, opts).
-		Label(fmt.Sprintf("период действия с %s\nпо %s", tmpl.view.Certificate.ValidityPeriodFrom, tmpl.view.Certificate.ValidityPeriodTo), pdfego.CellOptions{FontSize: 5, Wrap: true})
+		Label(fmt.Sprintf("период действия с %s\nпо %s", tmpl.view.Certificate.ValidityPeriodFrom, tmpl.view.Certificate.ValidityPeriodTo), pdfego.CellOptions{FontSize: 5, FitContent: "W"})
 }

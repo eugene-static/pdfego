@@ -6,28 +6,27 @@ import (
 	"os"
 	"slices"
 	"sync"
+	"unicode"
+
+	"golang.org/x/image/font/sfnt"
+	"golang.org/x/image/math/fixed"
 
 	"github.com/eugene-static/pdfego/internal/components/parameter"
 	"github.com/eugene-static/pdfego/internal/components/stream"
+	"github.com/eugene-static/pdfego/internal/components/stream/bytes"
 	"github.com/eugene-static/pdfego/internal/components/stream/primitives"
 	"github.com/eugene-static/pdfego/internal/compressor"
 	"github.com/eugene-static/pdfego/unit"
-	"golang.org/x/image/font/sfnt"
-	"golang.org/x/image/math/fixed"
 )
 
 const (
-	hintingNone               = 0
-	notdef                    = 0
-	ppem        fixed.Int26_6 = 1000 << 6
+	hintingNone        = 0
+	rusRunesLimitIndex = 1200
 
-	splitTab     = '\t'
-	splitNewline = '\n'
-	splitReturn  = '\r'
-	splitSpace   = ' '
+	ppem           fixed.Int26_6 = 1000 << 6
+	defaultAdvance fixed.Int26_6 = 600
 
-	defaultAdvance     fixed.Int26_6 = 600
-	rusRunesLimitIndex               = 1200
+	lf = '\n'
 )
 
 type Font struct {
@@ -39,7 +38,7 @@ type Font struct {
 	objects objects
 }
 
-// metrics содержит параметры шрифта. Визуальное представление можно найти здесь:
+// Структура metrics содержит параметры шрифта. Визуальное представление можно найти здесь:
 // https://developer.apple.com/library/mac/documentation/TextFonts/Conceptual/CocoaTextArchitecture/Art/glyph_metrics_2x.png
 type metrics struct {
 	fontBBox          []int
@@ -47,9 +46,9 @@ type metrics struct {
 	ascent            int
 	descent           int
 	stemV             int
-	underlinePosition fixed.Int26_6
-	capHeight         fixed.Int26_6
-	height            fixed.Int26_6
+	height            unit.EM
+	capHeight         unit.EM
+	underlinePosition unit.EM
 }
 
 func New(path, alias string, comp *compressor.Compressor) (*Font, error) {
@@ -109,8 +108,10 @@ func New(path, alias string, comp *compressor.Compressor) (*Font, error) {
 
 	stemV := glyphAdvanceRounded
 
-	italicAngle := float64(0)
-	underlinePosition := int16(0)
+	var (
+		italicAngle       float64
+		underlinePosition int16
+	)
 
 	if postTable := sfntFont.PostTable(); postTable != nil {
 		italicAngle = postTable.ItalicAngle
@@ -122,10 +123,19 @@ func New(path, alias string, comp *compressor.Compressor) (*Font, error) {
 		italicAngle:       italicAngle,
 		ascent:            ascent,
 		descent:           descent,
-		capHeight:         capHeight,
-		underlinePosition: fixed.I(int(underlinePosition)),
 		stemV:             stemV,
-		height:            height,
+		height:            unit.Font(height).EM(ppem),
+		capHeight:         unit.Font(capHeight).EM(ppem),
+		underlinePosition: unit.Font(fixed.I(int(underlinePosition))).EM(ppem),
+	}
+
+	_fontManager := fontManager{
+		mu:                 &sync.RWMutex{},
+		faceb:              buf,
+		glyphsSlowCache:    make(map[rune]glyph),
+		glyphsFastCache:    make([]glyph, rusRunesLimitIndex),
+		spaceGlyphsIndexes: make(map[unit.HEX]struct{}, 4),
+		compressor:         comp,
 	}
 
 	f := &Font{
@@ -133,37 +143,68 @@ func New(path, alias string, comp *compressor.Compressor) (*Font, error) {
 		face:    sfntFont,
 		bytes:   fontBytes,
 		metrics: _metrics,
-		manager: fontManager{
-			mu:              &sync.RWMutex{},
-			faceb:           buf,
-			glyphsSlowCache: make(map[rune]glyph),
-			glyphsFastCache: make([]glyph, rusRunesLimitIndex),
-			compressor:      comp,
-		},
+		manager: _fontManager,
 	}
 
 	return f, nil
 }
 
-// 1 0 0 1 $X $Y Tm <$HEX1$HEX2...$HEXN> Tj
-func (f *Font) WriteToStream(dst *stream.Stream, text []Text, fontSize unit.PT) {
-	builder := dst.NewStreamWriter()
+func (f *Font) WriteToStreamWithIndividualGlyphPosition(dst *stream.Stream, text []Text, fontSize unit.PT) {
+	bw := bytes.NewWriter(dst.AvailableBuffer())
 
-	builder.
+	bw.
 		Write(primitives.BeginText).LF().
 		Write(f.alias).SP().
 		Write(fontSize).SP().
 		Write(primitives.TextFont).LF()
 
 	for i := range text {
-		builder.
+		bw.
+			Write(text[i].matrix).SP().
+			Write(primitives.TextMatrix).SP().
+			WriteByte(primitives.ArrayOpen).
+			WriteByte(primitives.HexadecimalStringOpen)
+
+		for _, hex := range text[i].content {
+			bw.Write(hex)
+
+			if f.manager.isSpaceGlyphIndex(hex) {
+				bw.
+					WriteByte(primitives.HexadecimalStringClose).SP().
+					WriteFloat(float64(text[i].shift.Font(ppem))).SP().
+					WriteByte(primitives.HexadecimalStringOpen)
+			}
+		}
+
+		bw.
+			WriteByte(primitives.HexadecimalStringClose).
+			WriteByte(primitives.ArrayClose).SP().
+			Write(primitives.ShowTextWithIndividualGlyphPositioning).LF()
+	}
+
+	bw.Write(primitives.EndText).LF()
+
+	dst.Write(bw.Bytes())
+}
+
+func (f *Font) WriteToStream(dst *stream.Stream, text []Text, fontSize unit.PT) {
+	sw := dst.NewStreamWriter()
+
+	sw.
+		Write(primitives.BeginText).LF().
+		Write(f.alias).SP().
+		Write(fontSize).SP().
+		Write(primitives.TextFont).LF()
+
+	for i := range text {
+		sw.
 			Write(text[i].matrix).SP().
 			Write(primitives.TextMatrix).SP().
 			Write(text[i].content).SP().
 			Write(primitives.ShowText).LF()
 	}
 
-	builder.
+	sw.
 		Write(primitives.EndText).LF().
 		Close()
 }
@@ -173,110 +214,229 @@ func (f *Font) Alias() parameter.Name {
 }
 
 func (f *Font) Height(size unit.PT) unit.PT {
-	return size * unit.PT(float64(f.metrics.height)/float64(ppem))
+	return f.metrics.height.PT(size)
 }
 
 func (f *Font) CapHeight(size unit.PT) unit.PT {
-	return size * unit.PT(float64(f.metrics.capHeight)/float64(ppem))
+	return f.metrics.capHeight.PT(size)
 }
 
 func (f *Font) UnderlinePosition(size unit.PT) unit.PT {
-	return size * unit.PT(float64(f.metrics.underlinePosition)/float64(ppem)) / 7
+	return f.metrics.underlinePosition.PT(size) / 7
 }
 
-func (f *Font) SplitText(text string, size unit.PT, width unit.MM, textb *[]Text, runeb *[]rune, hexb *[]primitives.HEX) {
-	*runeb = (*runeb)[:0]
+func (f *Font) WriteTextToLine(text string, size unit.PT, width unit.MM, textb []Text, hexb *[]unit.HEX) []Text {
+	var (
+		shift       unit.EM
+		lineAdvance unit.EM
+		spaceCount  int
+	)
 
-	targetWidth := width.PT()
+	targetAdvance := width.PT().EM(size)
+	hexbStartIndex := len(*hexb)
 
 	for _, r := range text {
-		f.saveRune(r)
-		*runeb = append(*runeb, r)
-	}
+		_glyph := f.glyph(r)
 
-	start := 0
-	for start < len(*runeb) && (!isSpaceSymbol((*runeb)[start]) || targetWidth == 0) {
-		start++
-	}
+		if unicode.IsSpace(r) {
+			spaceCount++
 
-	lineStart := 0
-	lineEnd := start
-	textWidth := f.manager.measureText(*runeb, size, lineStart, lineEnd)
-
-	if start >= len(*runeb) {
-		*textb = append(*textb, Text{
-			content: f.text(*runeb, hexb),
-			width:   textWidth.MM(),
-		})
-
-		return
-	}
-
-	for i := start; i < len(*runeb); {
-		for i < len(*runeb) && isSpaceSymbol((*runeb)[i]) {
-			i++
+			f.manager.saveSpaceGlyphIndex(_glyph.index)
 		}
 
-		wordStart := i
+		lineAdvance += _glyph.advance
+		*hexb = append(*hexb, _glyph.index)
+	}
 
-		for i < len(*runeb) && !isSpaceSymbol((*runeb)[i]) {
-			i++
-		}
+	if spaceCount > 0 {
+		shift = (lineAdvance - targetAdvance) / unit.EM(spaceCount)
+	}
 
-		wordEnd := i
+	textb = append(textb, Text{
+		content: (*hexb)[hexbStartIndex:],
+		width:   lineAdvance.PT(size).MM(),
+		shift:   shift,
+	})
 
-		candidateWidth := f.manager.measureText(*runeb, size, lineStart, wordEnd)
+	return textb
+}
 
-		if candidateWidth > targetWidth || (*runeb)[lineEnd] == splitNewline {
-			*textb = append(*textb, Text{
-				content: f.text((*runeb)[lineStart:lineEnd], hexb),
-				width:   textWidth.MM(),
+func (f *Font) SplitTextIntoLinesBySymbols(text string, size unit.PT, width unit.MM, textb []Text, hexb *[]unit.HEX) []Text {
+	var (
+		lineAdvance unit.EM
+	)
+
+	targetAdvance := width.PT().EM(size)
+	hexbStartIndex := len(*hexb)
+
+	for _, r := range text {
+		_glyph := f.glyph(r)
+
+		candidateAdvance := lineAdvance + _glyph.advance
+
+		if candidateAdvance > targetAdvance {
+			textb = append(textb, Text{
+				content: (*hexb)[hexbStartIndex:],
+				width:   lineAdvance.PT(size).MM(),
 			})
 
-			textWidth = candidateWidth - textWidth
-			if (*runeb)[lineEnd] == splitSpace {
-				textWidth -= f.manager.glyphWidth(splitSpace, size)
+			lineAdvance = 0
+			hexbStartIndex = len(*hexb)
+		}
+
+		lineAdvance += _glyph.advance
+		*hexb = append(*hexb, _glyph.index)
+	}
+
+	textb = append(textb, Text{
+		content: (*hexb)[hexbStartIndex:],
+		width:   lineAdvance.PT(size).MM(),
+	})
+
+	return textb
+}
+
+func (f *Font) SplitTextIntoLinesByWords(text string, size unit.PT, width unit.MM, textb []Text, hexb *[]unit.HEX) []Text {
+	var (
+		shift, wordAdvance, lineAdvance, spaceAdvance unit.EM
+		wordsCount                                    int
+		inWord                                        bool
+	)
+
+	targetAdvance := width.PT().EM(size)
+	hexbStartIndex := len(*hexb)
+	hexbEndIndex := hexbStartIndex
+	wordStartIndex := hexbStartIndex
+
+	for _, r := range text {
+		_glyph := f.glyph(r)
+
+		if !unicode.IsSpace(r) {
+			if !inWord {
+				inWord = true
+				wordAdvance = 0
+				wordStartIndex = len(*hexb)
+				wordsCount++
 			}
 
-			lineStart = wordStart
-			lineEnd = wordEnd
+			wordAdvance += _glyph.advance
+			*hexb = append(*hexb, _glyph.index)
 
 			continue
 		}
 
-		lineEnd = wordEnd
-		textWidth = candidateWidth
+		if inWord {
+			candidateAdvance := lineAdvance + spaceAdvance + wordAdvance
+
+			if candidateAdvance > targetAdvance {
+				if wordsCount > 1 {
+					shift = (lineAdvance - targetAdvance) / unit.EM(wordsCount-1)
+				}
+
+				textb = append(textb, Text{
+					content: (*hexb)[hexbStartIndex:hexbEndIndex],
+					width:   lineAdvance.PT(size).MM(),
+					shift:   shift,
+				})
+
+				hexbStartIndex = wordStartIndex
+				hexbEndIndex = len(*hexb)
+				lineAdvance = wordAdvance
+				spaceAdvance = _glyph.advance
+				wordsCount = 1
+			} else {
+				if r == lf {
+					if wordsCount > 1 {
+						shift = (candidateAdvance - targetAdvance) / unit.EM(wordsCount-1)
+					}
+
+					textb = append(textb, Text{
+						content: (*hexb)[hexbStartIndex:],
+						width:   candidateAdvance.PT(size).MM(),
+						shift:   shift,
+					})
+
+					hexbStartIndex = len(*hexb)
+					lineAdvance = 0
+					spaceAdvance = 0
+					wordsCount = 0
+				} else {
+					f.manager.saveSpaceGlyphIndex(_glyph.index)
+
+					lineAdvance += wordAdvance + spaceAdvance
+					spaceAdvance = _glyph.advance
+					hexbEndIndex = len(*hexb)
+					*hexb = append(*hexb, _glyph.index)
+				}
+			}
+
+			inWord = false
+		}
 	}
 
-	if lineStart < len(*runeb) {
-		lineWidth := f.manager.measureText(*runeb, size, lineStart, lineEnd)
+	if inWord {
+		candidateAdvance := lineAdvance + spaceAdvance + wordAdvance
 
-		*textb = append(*textb, Text{
-			content: f.text((*runeb)[lineStart:lineEnd], hexb),
-			width:   lineWidth.MM(),
-		})
+		if candidateAdvance > targetAdvance {
+			if wordsCount > 1 {
+				shift = (lineAdvance - targetAdvance) / unit.EM(wordsCount-1)
+			}
+
+			textb = append(textb,
+				Text{
+					content: (*hexb)[hexbStartIndex:hexbEndIndex],
+					width:   lineAdvance.PT(size).MM(),
+					shift:   shift,
+				},
+				Text{
+					content: (*hexb)[wordStartIndex:],
+					width:   wordAdvance.PT(size).MM(),
+					shift:   0,
+				},
+			)
+		} else {
+			if wordsCount > 1 {
+				shift = (candidateAdvance - targetAdvance) / unit.EM(wordsCount-1)
+			}
+
+			textb = append(textb, Text{
+				content: (*hexb)[hexbStartIndex:],
+				width:   candidateAdvance.PT(size).MM(),
+				shift:   shift,
+			})
+		}
 	}
+
+	return textb
 }
 
-func (f *Font) gid(r rune) primitives.HEX {
-	gl, ok := f.manager.glyph(r)
-	if ok {
-		return primitives.HEX(gl.index)
+func (f *Font) glyph(r rune) glyph {
+	if r == lf {
+		return glyph{}
 	}
 
-	return notdef
+	f.manager.mu.RLock()
+	defer f.manager.mu.RUnlock()
+
+	if r < rusRunesLimitIndex {
+		if f.manager.glyphsFastCache[r].rune == 0 {
+			_glyph := f.saveGlyph(r)
+
+			f.manager.glyphsFastCache[r] = _glyph
+		}
+
+		return f.manager.glyphsFastCache[r]
+	}
+
+	_glyph, ok := f.manager.glyphsSlowCache[r]
+	if !ok {
+		_glyph = f.saveGlyph(r)
+	}
+
+	return _glyph
 }
 
-func (f *Font) saveRune(r rune) {
-	gl, ok := f.manager.glyph(r)
-	if ok && gl.rune > 0 {
-		return
-	}
-
-	if r == splitNewline {
-		return
-	}
-
+func (f *Font) saveGlyph(r rune) glyph {
 	gid, _ := f.face.GlyphIndex(f.manager.faceb, r) // err всегда nil
 
 	advance, err := f.face.GlyphAdvance(f.manager.faceb, gid, ppem, hintingNone)
@@ -284,9 +444,16 @@ func (f *Font) saveRune(r rune) {
 		advance = defaultAdvance // нас не интересует ошибка, просто ставим среднюю ширину символа.
 	}
 
-	f.manager.addGlyph(r, gid, advance)
+	_glyph := glyph{
+		rune:    uint16(r),
+		index:   unit.HEX(gid),
+		advance: unit.Font(advance).EM(ppem),
+	}
 
+	f.manager.glyphsSlowCache[r] = _glyph
 	f.manager.dirtyFlag = true
+
+	return _glyph
 }
 
 func (f *Font) glyphs() []glyph {
@@ -294,8 +461,8 @@ func (f *Font) glyphs() []glyph {
 		return f.manager.glyphs
 	}
 
-	glyphs := slices.SortedFunc(maps.Values(f.manager.glyphsSlowCache), func(g glyph, g2 glyph) int {
-		return cmp.Compare(g.index, g2.index)
+	glyphs := slices.SortedFunc(maps.Values(f.manager.glyphsSlowCache), func(_glyph1 glyph, _glyph2 glyph) int {
+		return cmp.Compare(_glyph1.index, _glyph2.index)
 	})
 
 	f.manager.glyphs = glyphs
@@ -308,11 +475,11 @@ func (f *Font) glyphsWidthTable() parameter.GlyphsWidthTable {
 
 	widthTable := make(parameter.GlyphsWidthTable, 0, len(glyphs))
 
-	for _, gl := range glyphs {
+	for _, _glyph := range glyphs {
 		widthTable = append(widthTable,
 			[2]uint64{
-				uint64(gl.index),
-				uint64(gl.advance.Round()),
+				uint64(_glyph.index),
+				uint64(_glyph.advance.Font(ppem)),
 			})
 	}
 
@@ -337,79 +504,21 @@ func (f *Font) subset(str *stream.Stream) error {
 	return nil
 }
 
-func (f *Font) text(s []rune, hexb *[]primitives.HEX) primitives.String {
-	start := len(*hexb)
-	end := start
-
-	for _, r := range s {
-		*hexb = append(*hexb, f.gid(r))
-		end++
-	}
-
-	return (*hexb)[start:end]
-}
-
 type glyph struct {
 	rune    uint16
-	index   sfnt.GlyphIndex
-	advance fixed.Int26_6
+	index   unit.HEX
+	advance unit.EM
 }
 
 type fontManager struct {
-	mu              *sync.RWMutex
-	compressor      *compressor.Compressor
-	faceb           *sfnt.Buffer
-	glyphs          []glyph
-	glyphsFastCache []glyph
-	glyphsSlowCache map[rune]glyph
-	dirtyFlag       bool
-}
-
-func (mgr *fontManager) measureText(runeb []rune, fontSize unit.PT, start, end int) unit.PT {
-	if start < 0 || end > len(runeb) || start >= end {
-		return unit.PT(0)
-	}
-
-	var advance fixed.Int26_6
-
-	for i := start; i < end; i++ {
-		char := runeb[i]
-
-		gl, ok := mgr.glyph(char)
-		if !ok {
-			advance += defaultAdvance
-
-			continue
-		}
-
-		advance += gl.advance
-	}
-
-	advance = advance.Mul(fontSize.FixedI())
-
-	width := unit.PT(float64(advance) / float64(ppem))
-
-	return width
-}
-
-func (mgr *fontManager) addGlyph(r rune, gid sfnt.GlyphIndex, advance fixed.Int26_6) {
-	mgr.mu.Lock()
-	defer mgr.mu.Unlock()
-
-	if r < rusRunesLimitIndex {
-		mgr.glyphsFastCache[r].rune = uint16(r)
-		mgr.glyphsFastCache[r].index = gid
-		mgr.glyphsFastCache[r].advance = advance
-		mgr.glyphsSlowCache[r] = mgr.glyphsFastCache[r]
-
-		return
-	}
-
-	mgr.glyphsSlowCache[r] = glyph{
-		rune:    uint16(r),
-		index:   gid,
-		advance: advance,
-	}
+	mu                 *sync.RWMutex
+	compressor         *compressor.Compressor
+	faceb              *sfnt.Buffer
+	glyphs             []glyph
+	glyphsFastCache    []glyph
+	glyphsSlowCache    map[rune]glyph
+	spaceGlyphsIndexes map[unit.HEX]struct{}
+	dirtyFlag          bool
 }
 
 func (mgr *fontManager) glyph(r rune) (glyph, bool) {
@@ -420,34 +529,32 @@ func (mgr *fontManager) glyph(r rune) (glyph, bool) {
 		return mgr.glyphsFastCache[r], true
 	}
 
-	gl, ok := mgr.glyphsSlowCache[r]
+	_glyph, ok := mgr.glyphsSlowCache[r]
 
-	return gl, ok
+	return _glyph, ok
 }
 
-func (mgr *fontManager) glyphWidth(r rune, size unit.PT) unit.PT {
-	gl, ok := mgr.glyph(r)
-	if !ok {
-		return 0
-	}
+func (mgr *fontManager) saveSpaceGlyphIndex(gid unit.HEX) {
+	mgr.mu.Lock()
+	defer mgr.mu.Unlock()
 
-	fontSizeEm := size.FixedI()
-	advance := gl.advance.Mul(fontSizeEm)
-
-	width := unit.PT(float64(advance) / float64(ppem))
-
-	return width
+	mgr.spaceGlyphsIndexes[gid] = struct{}{}
 }
 
-func isSpaceSymbol(r rune) bool {
-	return r == splitSpace || r == splitTab || r == splitNewline || r == splitReturn
+func (mgr *fontManager) isSpaceGlyphIndex(gid unit.HEX) bool {
+	mgr.mu.RLock()
+	defer mgr.mu.RUnlock()
+
+	_, ok := mgr.spaceGlyphsIndexes[gid]
+
+	return ok
 }
 
 type Text struct {
 	content primitives.String
 	matrix  primitives.Matrix
 	width   unit.MM
-	dw      unit.MM // TODO: Разница между шириной ячейки и шириной текста
+	shift   unit.EM
 }
 
 func (text *Text) SetMatrix(point primitives.Point) {
