@@ -44,7 +44,7 @@ func (f *Font) ttfSubset() ([]byte, error) {
 	glyphset := make(map[uint32]struct{}, len(glyphsIndexes))
 	glyphset[0] = struct{}{}
 
-	for _, gl := range f.glyphs() {
+	for _, gl := range f.manager.sortedGlyphs() {
 		glyphsIndexes = append(glyphsIndexes, uint32(gl.index))
 		glyphset[uint32(gl.index)] = struct{}{}
 	}
@@ -137,7 +137,7 @@ func (f *Font) ttfSubset() ([]byte, error) {
 	slices.Sort(glyphsIndexes)
 
 	// loop back over the loca table and zero out the outlines of unused glyphs
-	for i := 0; i < len(_loca); i++ {
+	for i := range _loca {
 		var offset, next uint32
 		if i < len(_loca)-1 {
 			offset = _loca[i]

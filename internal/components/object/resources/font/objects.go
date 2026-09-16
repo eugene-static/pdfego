@@ -32,7 +32,7 @@ func (f *Font) CMapB() *object.Object {
 	}
 
 	if f.manager.dirtyFlag {
-		glyphs := f.glyphs()
+		glyphs := f.manager.sortedGlyphs()
 		stream := f.objects.cMapB.Stream()
 
 		stream.Reset()

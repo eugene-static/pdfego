@@ -3,6 +3,7 @@ package pdfego
 import (
 	"errors"
 	"os"
+	"unicode"
 
 	"github.com/eugene-static/pdfego/internal/components/object/pages"
 	"github.com/eugene-static/pdfego/internal/components/object/resources"
@@ -73,14 +74,25 @@ func (core *Core) IgnoreImageNotFound() {
 }
 
 // ReadFont добавляет новый шрифт с заданным псевдонимом alias, который потом можно использовать в каждой ячейке таблицы.
-func (core *Core) ReadFont(path, alias string) error {
+// Параметр rangeTables определяет диапазоны рун, используемые в данном шрифте.
+// Для шрифтов с поддержкой латиницы, кириллицы и греческого языка данный параметр указывать не обязательно.
+// Можно использовать разные шрифты с одним алиасом, если они имеют разные диапазоны рун.
+// Если диапазоны рун у шрифтов совпадают, то будет использован шрифт, который был инициализирован первее.
+func (core *Core) ReadFont(path, alias string, rangeTables ...*unicode.RangeTable) error {
 	if alias == "" {
 		err := errors.New("псевдоним не может быть пустым")
 
 		return err
 	}
 
-	f, err := font.New(path, alias, core.compressor)
+	options := font.Options{
+		Alias:       alias,
+		Path:        path,
+		Compressor:  core.compressor,
+		RangeTables: rangeTables,
+	}
+
+	f, err := font.New(options)
 	if err != nil {
 		return err
 	}
@@ -91,8 +103,8 @@ func (core *Core) ReadFont(path, alias string) error {
 }
 
 // SetFontRegular читает и устанавливает шрифт с псевдонимом "REG". При конфигурации ячейки указывать этот псевдоним не обязательно, если не задан шрифт по-умолчанию.
-func (core *Core) SetFontRegular(path string) error {
-	err := core.ReadFont(path, FontRegular)
+func (core *Core) SetFontRegular(path string, rangeTables ...*unicode.RangeTable) error {
+	err := core.ReadFont(path, FontRegular, rangeTables...)
 	if err != nil {
 		return err
 	}
@@ -101,8 +113,8 @@ func (core *Core) SetFontRegular(path string) error {
 }
 
 // SetFontBold читает и устанавливает шрифт с псевдонимом "BOLD". При конфигурации ячейки с использованием метода LabelBold указывать этот псевдоним не обязательно.
-func (core *Core) SetFontBold(path string) error {
-	err := core.ReadFont(path, FontBold)
+func (core *Core) SetFontBold(path string, rangeTables ...*unicode.RangeTable) error {
+	err := core.ReadFont(path, FontBold, rangeTables...)
 	if err != nil {
 		return err
 	}
@@ -111,8 +123,8 @@ func (core *Core) SetFontBold(path string) error {
 }
 
 // SetFontItalic читает и устанавливает шрифт с псевдонимом "ITALIC".
-func (core *Core) SetFontItalic(path string) error {
-	err := core.ReadFont(path, FontItalic)
+func (core *Core) SetFontItalic(path string, rangeTables ...*unicode.RangeTable) error {
+	err := core.ReadFont(path, FontItalic, rangeTables...)
 	if err != nil {
 		return err
 	}
@@ -120,9 +132,14 @@ func (core *Core) SetFontItalic(path string) error {
 	return nil
 }
 
+// DefaultRangeTable возвращает диапазоны рун для шрифта, использующего латиницу, кириллицу и греческий языки.
+func (core *Core) DefaultRangeTable() []*unicode.RangeTable {
+	return font.DefaultRangeTable
+}
+
 // SetDefaultFont устанавливает шрифт по-умолчанию. Если не задан, используется REG.
 func (core *Core) SetDefaultFont(alias string) error {
-	_, err := core.resources.GetFont(alias)
+	_, err := core.resources.GetFonts(alias)
 	if err != nil {
 		return err
 	}
@@ -134,7 +151,7 @@ func (core *Core) SetDefaultFont(alias string) error {
 
 // SetDefaultFontBold устанавливает жирный шрифт по-умолчанию. Если не задан, используется BOLD.
 func (core *Core) SetDefaultFontBold(alias string) error {
-	_, err := core.resources.GetFont(alias)
+	_, err := core.resources.GetFonts(alias)
 	if err != nil {
 		return err
 	}
@@ -146,7 +163,7 @@ func (core *Core) SetDefaultFontBold(alias string) error {
 
 // SetDefaultFontItalic устанавливает наклонный шрифт по-умолчанию. Если не задан, используется ITALIC.
 func (core *Core) SetDefaultFontItalic(alias string) error {
-	_, err := core.resources.GetFont(alias)
+	_, err := core.resources.GetFonts(alias)
 	if err != nil {
 		return err
 	}
@@ -227,11 +244,11 @@ func (core *Core) DefaultBorderSize() unit.PT {
 	return core.borderSize
 }
 
-func (core *Core) font(alias string) (*font.Font, error) {
-	_font, err := core.resources.GetFont(alias)
+func (core *Core) font(alias string) (*font.Fonts, error) {
+	fonts, err := core.resources.GetFonts(alias)
 	if err != nil {
 		return nil, err
 	}
 
-	return _font, nil
+	return fonts, nil
 }

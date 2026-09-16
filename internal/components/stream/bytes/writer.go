@@ -185,3 +185,7 @@ func ParseFloat(s []byte) (v float64, err error) {
 func FormatInt(v int) string {
 	return strconv.FormatInt(int64(v), 10)
 }
+
+func FormatUint(v uint) string {
+	return strconv.FormatUint(uint64(v), 10)
+}

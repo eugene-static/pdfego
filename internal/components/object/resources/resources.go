@@ -17,7 +17,7 @@ const ObjectNumber parameter.Reference = 2
 
 type Resources struct {
 	mu     *sync.RWMutex
-	fonts  map[string]*font.Font
+	fonts  map[string]*font.Fonts
 	images map[string]*image.Image
 	object map[string]*object.Object
 }
@@ -25,20 +25,25 @@ type Resources struct {
 func New() *Resources {
 	return &Resources{
 		mu:     &sync.RWMutex{},
-		fonts:  make(map[string]*font.Font),
+		fonts:  make(map[string]*font.Fonts),
 		images: make(map[string]*image.Image),
 		object: make(map[string]*object.Object),
 	}
 }
 
-func (r *Resources) SetFont(alias string, font *font.Font) {
+func (r *Resources) SetFont(alias string, _font *font.Font) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	r.fonts[alias] = font
+	_, ok := r.fonts[alias]
+	if !ok {
+		r.fonts[alias] = new(font.Fonts)
+	}
+
+	r.fonts[alias].Add(_font)
 }
 
-func (r *Resources) GetFont(alias string) (*font.Font, error) {
+func (r *Resources) GetFonts(alias string) (*font.Fonts, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
@@ -48,14 +53,14 @@ func (r *Resources) GetFont(alias string) (*font.Font, error) {
 		return nil, err
 	}
 
-	fnt, ok := r.fonts[alias]
+	fonts, ok := r.fonts[alias]
 	if !ok {
-		err := errs.ErrNotFound(fmt.Sprintf("шрифт с именем %s", alias))
+		err := errs.ErrNotFound(fmt.Sprintf("шрифтов с именем %s", alias))
 
 		return nil, err
 	}
 
-	return fnt, nil
+	return fonts, nil
 }
 
 func (r *Resources) SetImage(alias string, img *image.Image) {
@@ -81,12 +86,12 @@ func (r *Resources) SetObject(alias string, obj *object.Object) {
 	r.object[alias] = obj
 }
 
-func (r *Resources) ForEachFont(fn func(k string, f *font.Font)) {
+func (r *Resources) ForEachFont(fn func(f *font.Font)) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
-	for k, v := range r.fonts {
-		fn(k, v)
+	for _, fonts := range r.fonts {
+		fonts.ForEach(fn)
 	}
 }
 
