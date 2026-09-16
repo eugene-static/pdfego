@@ -1,8 +1,14 @@
 package primitives
 
 const (
-	ArrayOpen                 = '['
-	ArrayClose                = ']'
+	ArrayOpen  = '['
+	ArrayClose = ']'
+
+	LiteralStringOpen      = '('
+	LiteralStringClose     = ')'
+	HexadecimalStringOpen  = '<'
+	HexadecimalStringClose = '>'
+
 	DictionaryOpen  Delimiter = "<<"
 	DictionaryClose Delimiter = ">>"
 )

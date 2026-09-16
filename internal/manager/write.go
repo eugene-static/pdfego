@@ -96,10 +96,10 @@ func (mgr *Manager) writeResources(resources *resources.Resources) {
 	fontsDictionary := dictionary.New()
 	xObjectsDictionary := dictionary.New()
 
-	resources.ForEachFont(func(alias string, _font *font.Font) {
+	resources.ForEachFont(func(_font *font.Font) {
 		number := mgr.writeFont(_font)
 
-		fontsDictionary.Set(parameter.Name(alias), number)
+		fontsDictionary.Set(_font.Alias(), number)
 	})
 
 	resources.ForEachImage(func(alias string, _image *image.Image) {
@@ -108,10 +108,10 @@ func (mgr *Manager) writeResources(resources *resources.Resources) {
 		xObjectsDictionary.Set(parameter.Name(alias), number)
 	})
 
-	mgr.resources.ForEachFont(func(alias string, _font *font.Font) {
+	mgr.resources.ForEachFont(func(_font *font.Font) {
 		number := mgr.writeFont(_font)
 
-		fontsDictionary.Set(parameter.Name(alias), number)
+		fontsDictionary.Set(_font.Alias(), number)
 	})
 
 	mgr.resources.ForEachImage(func(alias string, _image *image.Image) {

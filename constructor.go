@@ -1419,7 +1419,7 @@ func (r *Row) skipCell() *cell {
 }
 
 func (r *Row) textCell(text string, options CellOptions) *cell {
-	_font, err := r.core.font(coalesce(options.Font, r.core.fontRegularAlias))
+	_fonts, err := r.core.font(coalesce(options.Font, r.core.fontRegularAlias))
 	if err != nil {
 		r.ctx.SetError(err)
 
@@ -1437,7 +1437,7 @@ func (r *Row) textCell(text string, options CellOptions) *cell {
 	}
 
 	c.mode = textMode
-	c.font = _font
+	c.fonts = _fonts
 	c.id = options.ID
 	c.height = options.Height
 	c.underline = options.UnderLine
@@ -1553,8 +1553,8 @@ func (r *Row) cellWidth(colspan uint8) (w unit.MM) {
 func (r *Row) setHeight(c *cell) {
 	linesCount := coalesce(len(c.textLines), 1)
 
-	if c.font != nil {
-		calcHeight := c.font.Height(c.fontSize).MM() * unit.MM(linesCount)
+	if c.fonts != nil {
+		calcHeight := c.fonts.Height(c.fontSize).MM() * unit.MM(linesCount)
 
 		if calcHeight > r.height && c.rowspan < 2 {
 			r.height = calcHeight
@@ -1587,7 +1587,7 @@ func (r *Row) updateParameters(c *cell) {
 }
 
 type cell struct {
-	font       *font.Font
+	fonts      *font.Fonts
 	image      *image.Image
 	textLines  []font.Text
 	border     borderOptions
@@ -1609,7 +1609,7 @@ type cell struct {
 }
 
 func (c *cell) setTextLines(ctx *manager.Context, text string) {
-	if c.font == nil {
+	if c.fonts == nil {
 		return
 	}
 
@@ -1625,11 +1625,11 @@ func (c *cell) setTextLines(ctx *manager.Context, text string) {
 
 	switch c.fitContent {
 	case fitWords:
-		c.textLines = c.font.SplitTextIntoLinesByWords(text, c.fontSize, c.width, c.textLines, ctx.HexBuffer())
+		c.textLines = c.fonts.TextToLineDividedByWords(text, c.fontSize, c.width, c.textLines, ctx.SymbolsBuffer())
 	case fitSymbols:
-		c.textLines = c.font.SplitTextIntoLinesBySymbols(text, c.fontSize, c.width, c.textLines, ctx.HexBuffer())
+		c.textLines = c.fonts.TextToLineDividedBySymbols(text, c.fontSize, c.width, c.textLines, ctx.SymbolsBuffer())
 	default:
-		c.textLines = c.font.WriteTextToLine(text, c.fontSize, c.width, c.textLines, ctx.HexBuffer())
+		c.textLines = c.fonts.TextToLineNotDivided(text, c.fontSize, c.width, c.textLines, ctx.SymbolsBuffer())
 	}
 }
 
@@ -1706,9 +1706,9 @@ func (c *cell) renderText(dst *stream.Stream, cursor unit.Point, parentTextColor
 	}
 
 	if c.alignH == alignJ {
-		c.font.WriteToStreamWithIndividualGlyphPosition(dst, c.textLines, c.fontSize)
+		c.fonts.WriteToStreamWithIndividualGlyphPosition(dst, c.textLines, c.fontSize)
 	} else {
-		c.font.WriteToStream(dst, c.textLines, c.fontSize)
+		c.fonts.WriteToStream(dst, c.textLines, c.fontSize)
 	}
 }
 
@@ -1744,7 +1744,7 @@ func (c *cell) lineDx(index int) (dx unit.MM) {
 }
 
 func (c *cell) lineDy(index int) (dy unit.MM) {
-	fontHeight := c.font.Height(c.fontSize).MM()
+	fontHeight := c.fonts.Height(c.fontSize).MM()
 	lenTextLines := len(c.textLines)
 	padding := font.Padding(c.fontSize).MM()
 

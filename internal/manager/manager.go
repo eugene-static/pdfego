@@ -6,6 +6,7 @@ import (
 	"github.com/eugene-static/pdfego/internal/components/object/info"
 	"github.com/eugene-static/pdfego/internal/components/object/pages"
 	"github.com/eugene-static/pdfego/internal/components/object/resources"
+	"github.com/eugene-static/pdfego/internal/components/object/resources/font"
 	"github.com/eugene-static/pdfego/internal/components/object/trailer"
 	"github.com/eugene-static/pdfego/internal/components/object/xref"
 	"github.com/eugene-static/pdfego/internal/components/stream"
@@ -29,7 +30,7 @@ type Manager struct {
 
 func New(cfg *pages.Config) *Manager {
 	ctx := &Context{
-		hexb: make([]unit.HEX, 0, 1<<10),
+		symb: make([]font.Symbol, 0, 1<<10),
 	}
 
 	comp := compressor.New()
@@ -101,7 +102,7 @@ func (mgr *Manager) EnableCompression(enable bool) {
 }
 
 func (mgr *Manager) ResetBuffers() {
-	mgr.context.hexb = mgr.context.hexb[:0]
+	mgr.context.symb = mgr.context.symb[:0]
 }
 
 func (mgr *Manager) IsBelowBottomBorder(y unit.MM) bool {
@@ -109,12 +110,12 @@ func (mgr *Manager) IsBelowBottomBorder(y unit.MM) bool {
 }
 
 type Context struct {
-	hexb  []unit.HEX
+	symb  []font.Symbol
 	error error
 }
 
-func (ctx *Context) HexBuffer() *[]unit.HEX {
-	return &ctx.hexb
+func (ctx *Context) SymbolsBuffer() *[]font.Symbol {
+	return &ctx.symb
 }
 
 func (ctx *Context) Error() error {

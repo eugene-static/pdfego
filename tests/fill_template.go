@@ -15,17 +15,17 @@ func initCore() (*pdfego.Core, error) {
 	c.EnableCompression()
 	c.IgnoreImageNotFound()
 
-	err := c.SetFontRegular("./fonts/LiberationSans-Regular.ttf")
+	err := c.SetFontRegular("./fonts/NotoSans-Regular.ttf")
 	if err != nil {
 		return nil, err
 	}
 
-	err = c.SetFontBold("./fonts/LiberationSans-Bold.ttf")
+	err = c.SetFontBold("./fonts/NotoSans-Bold.ttf")
 	if err != nil {
 		return nil, err
 	}
 
-	err = c.SetFontItalic("./fonts/LiberationSans-Italic.ttf")
+	err = c.SetFontItalic("./fonts/NotoSans-Italic.ttf")
 	if err != nil {
 		return nil, err
 	}
@@ -95,7 +95,7 @@ func (tmpl *updTemplate) header(block *pdfego.Block) {
 		Cell("Статус", pdfego.CellOptions{Height: 5, Align: "LM"}).
 		Cell(tmpl.view.Status, pdfego.CellOptions{Height: 5, Align: "CM", Border: "O"})
 	table.Row().
-		Cell("1 - счет-фактура и\nпередаточный\nдокумент (акт)\n2 - передаточный\nдокумент (акт)", pdfego.CellOptions{Align: "LB", Colspan: 2, FontSize: 5, FitContent: "W"})
+		Cell("1 - счет-фактура и передаточный документ (акт)\n2 - передаточный документ (акт)", pdfego.CellOptions{Align: "LB", Colspan: 2, FontSize: 5, FitContent: "W"})
 
 	numberDatesRequisitesSlot := block.Slot(
 		pdfego.NodeOptions{
@@ -215,7 +215,7 @@ func (tmpl *updTemplate) header(block *pdfego.Block) {
 		Blank(tmpl.view.CurrencyNameCode, "LB").
 		Paragraph("(7)")
 	table.Row().
-		Label("Идентификатор государственного контракта,\nдоговора (соглашения) (при наличии):", pdfego.CellOptions{FitContent: "W"}).
+		Label("Идентификатор государственного контракта, договора (соглашения)\n(при наличии):", pdfego.CellOptions{FitContent: "W"}).
 		BlankEmpty().
 		Paragraph("(8)")
 }
