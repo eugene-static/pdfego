@@ -48,7 +48,9 @@ func (f *Fonts) Add(font *Font) {
 
 func (f *Fonts) ForEach(fn func(*Font)) {
 	for _, font := range *f {
-		fn(font)
+		if len(font.manager.glyphsCache) > 0 {
+			fn(font)
+		}
 	}
 }
 
