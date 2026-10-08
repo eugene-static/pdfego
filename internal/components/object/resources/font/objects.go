@@ -8,7 +8,6 @@ import (
 	"github.com/eugene-static/pdfego/internal/components/parameter"
 	"github.com/eugene-static/pdfego/internal/components/stream/bytes"
 	"github.com/eugene-static/pdfego/internal/components/stream/primitives"
-	"github.com/eugene-static/pdfego/unit"
 )
 
 type objects struct {
@@ -54,7 +53,7 @@ func (f *Font) CMapB() *object.Object {
 					WriteByte(primitives.HexadecimalStringClose).
 					SP().
 					WriteByte(primitives.HexadecimalStringOpen).
-					Write(unit.HEX(_glyph.rune)).
+					Write(_glyph.rune).
 					WriteByte(primitives.HexadecimalStringClose).
 					LF()
 			}
@@ -139,7 +138,7 @@ func (f *Font) FontDescriptor() *object.Object {
 
 		_fontDescriptor := &fontDescriptor{
 			Type:        "FontDescriptor",
-			FontName:    parameter.Name(f.alias),
+			FontName:    f.Alias(),
 			Flags:       4,
 			FontBBox:    parameter.NewNumberArray(f.metrics.fontBBox...),
 			ItalicAngle: parameter.Number(f.metrics.italicAngle),
@@ -190,7 +189,7 @@ func (f *Font) CIDFontType2() *object.Object {
 		_cidFontType2 := &cidFontType2{
 			Type:           "Font",
 			Subtype:        "CIDFontType2",
-			BaseFont:       parameter.Name(f.alias),
+			BaseFont:       f.Alias(),
 			CIDSystemInfo:  cidSystemInfo,
 			FontDescriptor: fontDescriptorRef,
 			DW:             600,
@@ -234,7 +233,7 @@ func (f *Font) FontType0() *object.Object {
 		_fontType0 := &fontType0{
 			Type:            "Font",
 			Subtype:         "Type0",
-			BaseFont:        parameter.Name(f.alias),
+			BaseFont:        f.Alias(),
 			Encoding:        parameter.IdentityH,
 			DescendantFonts: parameter.ReferencesPtrs{cidFontType2Ref},
 			ToUnicode:       cMapBRef,

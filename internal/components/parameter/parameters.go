@@ -374,14 +374,14 @@ func (param GlyphsWidthTable) Append(dst []byte) []byte {
 		index := _glyph[0]
 		advance := _glyph[1]
 
-		if index == prev+1 {
-			dst = bytes.AppendSpace(dst)
-			dst = bytes.AppendUint(dst, advance)
-
-			continue
-		}
-
 		if i > 0 {
+			if index == prev+1 {
+				dst = bytes.AppendSpace(dst)
+				dst = bytes.AppendUint(dst, advance)
+
+				continue
+			}
+
 			dst = append(dst, primitives.ArrayClose, ' ')
 		}
 
